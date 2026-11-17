@@ -1,0 +1,1494 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Context &amp; Token Monitor</title>
+<script src="/preload.js"></script>
+<script src="/echarts.min.js"></script>
+<style>
+  :root {
+    --fg: var(--foreground, #1f2328);
+    --dim: var(--muted-foreground, #656d76);
+    --bg: var(--background, transparent);
+    --line: var(--border, color-mix(in srgb, var(--fg) 10%, transparent));
+    --surface: color-mix(in srgb, var(--fg) 3.5%, transparent);
+    --surface-hover: color-mix(in srgb, var(--fg) 6.5%, transparent);
+    --track: color-mix(in srgb, var(--fg) 10%, transparent);
+    --empty-dot: color-mix(in srgb, var(--fg) 14%, transparent);
+    --accent: #3b82f6;
+    --ok: #10b981;
+    --warn: #f59e0b;
+    --danger: #ef4444;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: var(--foreground, #e6edf3);
+      --dim: var(--muted-foreground, #8b949e);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    color: var(--fg);
+    background: var(--bg);
+    font: 12.5px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--fg) 16%, transparent);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--fg) 28%, transparent); }
+
+  main { padding: 12px 14px 20px; }
+  .num { font-variant-numeric: tabular-nums; }
+  .dim { color: var(--dim); }
+
+  /* Segmented Control */
+  .seg-bar {
+    display: inline-flex;
+    padding: 2px;
+    border-radius: 8px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    gap: 2px;
+  }
+  .seg-btn {
+    border: none;
+    background: transparent;
+    color: var(--dim);
+    font: inherit;
+    font-size: 11.5px;
+    font-weight: 500;
+    padding: 3px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.14s ease;
+  }
+  .seg-btn:hover { color: var(--fg); }
+  .seg-btn.active {
+    background: var(--surface-hover);
+    color: var(--fg);
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  }
+  .range-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .scope-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .seg-bar.seg-sm {
+    border-radius: 7px;
+  }
+  .seg-bar.seg-sm .seg-btn {
+    font-size: 11px;
+    padding: 2px 9px;
+    border-radius: 5px;
+  }
+  .model-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 11px;
+    border-bottom: 1px solid var(--line);
+    font-size: 11.5px;
+  }
+  .model-row:last-child { border-bottom: none; }
+  .model-bar-wrap { flex: 1; min-width: 0; }
+  .model-bar-top { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+  .model-bar-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .model-bar { height: 4px; border-radius: 999px; background: var(--track); overflow: hidden; }
+  .model-bar > div { height: 100%; border-radius: 999px; background: var(--accent); }
+
+  /* Charts */
+  .chart-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px 11px;
+    margin-bottom: 10px;
+  }
+  .chart-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .chart-title { font-size: 11.5px; font-weight: 600; color: var(--fg); }
+  .chart-svg { width: 100%; display: block; overflow: visible; }
+  .chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    margin-top: 6px;
+    font-size: 10.5px;
+    color: var(--dim);
+  }
+  .chart-leg-item { display: inline-flex; align-items: center; gap: 4px; }
+  .chart-leg-dot { width: 7px; height: 7px; border-radius: 2px; flex: none; }
+  .donut-wrap {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .donut-rows {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: 11.5px;
+  }
+  .donut-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* Tool Treemap */
+  .tm-strip {
+    display: flex;
+    height: 4px;
+    border-radius: 999px;
+    overflow: hidden;
+    gap: 1.5px;
+    margin-bottom: 8px;
+    background: var(--track);
+  }
+  .tm-box {
+    position: relative;
+    width: 100%;
+    height: 176px;
+  }
+  .tm-group {
+    position: absolute;
+    border-radius: 7px;
+    padding: 3px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .tm-ghead {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 9.5px;
+    font-weight: 600;
+    line-height: 1.2;
+    padding: 0 2px 2px;
+    color: #1f2328;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .tm-gbody {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+  }
+  .tm-leaf {
+    position: absolute;
+    border-radius: 5px;
+    padding: 3px 5px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    color: #18181b;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    cursor: default;
+  }
+  .tm-leaf-name {
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.15;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tm-leaf-val {
+    font-size: 9.5px;
+    opacity: 0.78;
+    line-height: 1.15;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tm-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 6px;
+    margin-top: 8px;
+  }
+  .tm-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    font-size: 10.5px;
+    color: var(--dim);
+  }
+  .tm-pill-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+
+  /* Header */
+  .header {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    margin-bottom: 10px;
+  }
+  .model-badge {
+    display: inline-flex; align-items: center; gap: 7px; min-width: 0;
+    padding: 4px 10px 4px 8px; border-radius: 999px;
+    background: var(--surface); border: 1px solid var(--line);
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex: none; }
+  .dot.running { box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+  .model-name {
+    font-weight: 600; font-size: 12px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  .icon-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+    height: 26px; padding: 0 9px; border-radius: 7px;
+    font: inherit; font-size: 11.5px; color: var(--dim);
+    background: var(--surface); border: 1px solid var(--line);
+    cursor: pointer; transition: all 0.15s ease;
+  }
+  .icon-btn:hover:not(:disabled) { color: var(--fg); background: var(--surface-hover); border-color: color-mix(in srgb, var(--fg) 20%, transparent); }
+  .icon-btn:disabled { opacity: 0.4; cursor: default; }
+  .icon-btn svg { width: 13px; height: 13px; }
+
+  .back-bar {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    margin-bottom: 10px; padding: 6px 10px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+    font-size: 11.5px;
+  }
+  .back-btn {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border-radius: 6px;
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    background: var(--surface); color: var(--accent);
+    font: inherit; font-size: 11px; font-weight: 600; cursor: pointer;
+  }
+  .back-btn:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+
+  /* Hero Context Card with 100-dot grid */
+  .hero {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px 13px;
+    margin-bottom: 10px;
+  }
+  .hero-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .hero-label { font-size: 11.5px; font-weight: 500; color: var(--dim); }
+  .pct-pill {
+    font-size: 11.5px; font-weight: 600; padding: 1px 8px; border-radius: 999px;
+    border: 1px solid transparent;
+  }
+  .hero-nums { display: flex; align-items: baseline; gap: 6px; margin: 3px 0 10px; }
+  .hero-used { font-size: 24px; font-weight: 700; letter-spacing: -0.025em; }
+  .hero-max { font-size: 12.5px; color: var(--dim); }
+
+  .dot-grid {
+    display: grid;
+    grid-template-columns: repeat(20, minmax(0, 1fr));
+    gap: 4px;
+    max-width: 310px;
+    margin-bottom: 11px;
+  }
+  .ctx-dot {
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: var(--empty-dot);
+  }
+
+  .cat-list {
+    border-top: 1px solid var(--line);
+    padding-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .cat-row {
+    display: grid;
+    grid-template-columns: 10px 1fr auto 42px;
+    align-items: center;
+    gap: 7px;
+    font-size: 11.5px;
+    padding: 1px 0;
+  }
+  .cat-mark { width: 7px; height: 7px; border-radius: 50%; }
+  .cat-mark.free { background: transparent; border: 1.5px solid var(--empty-dot); }
+  .cat-tok { text-align: right; font-weight: 500; }
+  .cat-pct { text-align: right; color: var(--dim); font-size: 11px; }
+
+  /* Bento KPI Grid */
+  .bento { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+  .kpi {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 9px 11px;
+    transition: border-color 0.15s ease;
+  }
+  .kpi:hover { border-color: color-mix(in srgb, var(--fg) 18%, transparent); }
+  .kpi-head { display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: var(--dim); margin-bottom: 4px; }
+  .kpi-tag {
+    font-size: 10px; padding: 0 5px; border-radius: 4px;
+    background: var(--track); color: var(--dim);
+  }
+  .kpi-val { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; color: var(--fg); }
+  .kpi-sub { font-size: 11px; color: var(--dim); margin-top: 4px; line-height: 1.4; }
+
+  /* Subagents Section */
+  .sub-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 10px;
+  }
+  .sub-list { border-top: 1px solid var(--line); }
+  .sub-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 8px 11px;
+    border-bottom: 1px solid var(--line);
+    cursor: pointer;
+    transition: background-color 0.12s ease;
+  }
+  .sub-row:last-child { border-bottom: none; }
+  .sub-row:hover { background: var(--surface-hover); }
+  .sub-left { min-width: 0; flex: 1; }
+  .sub-title { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; }
+  .sub-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); flex: none; }
+  .sub-dot.running { box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); animation: pulse 1.4s ease-in-out infinite; }
+  .sub-dot.killed { background: var(--dim); }
+  .sub-role { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sub-meta { font-size: 11px; color: var(--dim); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sub-right { text-align: right; flex: none; min-width: 78px; }
+  .sub-ctx { font-size: 11.5px; font-weight: 600; }
+  .sub-bar { height: 4px; border-radius: 999px; background: var(--track); overflow: hidden; margin-top: 4px; }
+  .sub-bar > div { height: 100%; border-radius: 999px; }
+
+  .swarm-dist {
+    padding: 9px 11px;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    background: color-mix(in srgb, var(--fg) 1.5%, transparent);
+  }
+  .swarm-dist-head {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 11px; color: var(--dim); margin-bottom: 6px;
+  }
+  .swarm-stack {
+    display: flex; height: 7px; border-radius: 999px; overflow: hidden; gap: 1.5px;
+    background: var(--track); margin-bottom: 7px;
+  }
+  .swarm-seg { height: 100%; min-width: 3px; }
+  .swarm-legend {
+    display: flex; flex-wrap: wrap; gap: 4px 10px;
+    font-size: 10.5px; color: var(--dim);
+  }
+  .swarm-leg-item { display: inline-flex; align-items: center; gap: 4px; }
+  .swarm-leg-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+  .state-pill {
+    font-size: 10px; font-weight: 500; padding: 0 5px; border-radius: 4px; flex: none;
+  }
+  .state-pill.running { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+  .state-pill.idle { color: var(--dim); background: var(--track); }
+  .state-pill.killed { color: var(--dim); opacity: 0.7; background: var(--track); }
+
+  /* Collapsible & Paginated Turns */
+  .turns-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .turns-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 9px 11px;
+    border: none;
+    background: transparent;
+    color: var(--fg);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.12s ease;
+  }
+  .turns-toggle:hover { background: var(--surface-hover); }
+  .turns-toggle-left { display: inline-flex; align-items: center; gap: 6px; }
+  .chevron { width: 13px; height: 13px; color: var(--dim); transition: transform 0.16s ease; }
+  .chevron.open { transform: rotate(90deg); }
+
+  .turn-list { border-top: 1px solid var(--line); }
+  .turn-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 8px 11px;
+    border-bottom: 1px solid var(--line);
+    transition: background-color 0.12s ease;
+  }
+  .turn-row:last-child { border-bottom: none; }
+  .turn-row:hover { background: var(--surface-hover); }
+  .turn-left { min-width: 0; flex: 1; }
+  .turn-title { display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 500; }
+  .turn-num {
+    font-size: 10.5px; font-weight: 600; color: var(--dim);
+    padding: 0 5px; border-radius: 4px; background: var(--track);
+  }
+  .turn-model { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg); }
+  .turn-sub { font-size: 11px; color: var(--dim); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .turn-right { text-align: right; flex: none; }
+  .turn-spd { font-size: 12px; font-weight: 600; color: var(--fg); }
+  .turn-dur { font-size: 10.5px; color: var(--dim); margin-top: 1px; }
+
+  .pager {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 11px;
+    border-top: 1px solid var(--line);
+    font-size: 11px;
+    color: var(--dim);
+  }
+  .pager-btns { display: inline-flex; gap: 6px; }
+  .pager .icon-btn { height: 23px; padding: 0 8px; font-size: 11px; }
+
+  .empty { text-align: center; padding: 40px 14px; color: var(--dim); }
+  footer {
+    margin-top: 12px; padding: 0 2px;
+    font-size: 11px; color: var(--dim);
+    display: flex; justify-content: space-between; gap: 8px;
+  }
+</style>
+</head>
+<body>
+<main id="app"><p class="empty">正在连接语言服务器…</p></main>
+
+<script>
+(() => {
+  const POLL_MS = 2500;
+  const PAGE_SIZE = 10;
+  const doFetch = (window.sidecar && window.sidecar.fetch) ? window.sidecar.fetch.bind(window.sidecar) : fetch;
+  const params = new URLSearchParams(location.search);
+  const appEl = document.getElementById('app');
+
+  let viewMode = 'session'; // 'session' | 'summary'
+  let summaryScope = 'workspace'; // 'workspace' | 'all'
+  let summaryRange = 'today'; // 'today' | '7d' | '30d' | 'all'
+  let toolViewMode = 'treemap'; // 'treemap' | 'list'
+  let selectedConversationId = '';
+  let lastData = null;
+  let lastSummary = null;
+  let lastPayload = '';
+  let turnsExpanded = false; // default collapsed
+  let swarmExpanded = false; // default collapsed
+  let subagentsExpanded = false; // default collapsed
+  let currentPage = 1;
+
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+
+  function fmtTok(n) {
+    const v = Number(n) || 0;
+    if (v >= 1e6) return `${(v / 1e6).toFixed(v % 1e6 === 0 ? 0 : 2)}M`;
+    if (v >= 1e3) return `${(v / 1e3).toFixed(1)}k`;
+    return String(Math.round(v));
+  }
+
+  function fmtPct(v) {
+    if (v == null || !Number.isFinite(v)) return '-';
+    return `${v.toFixed(1)}%`;
+  }
+
+  function fmtSpeed(v) {
+    if (v == null || !Number.isFinite(v)) return '-';
+    return `${v.toFixed(0)} tok/s`;
+  }
+
+  function fmtSec(v) {
+    if (v == null || !Number.isFinite(v)) return '-';
+    return v >= 10 ? `${v.toFixed(1)}s` : `${v.toFixed(2)}s`;
+  }
+
+  function activeSidecarConversation() {
+    return (window.sidecar && window.sidecar.conversationId) || params.get('conversationId') || '';
+  }
+
+  function toneColor(pct) {
+    if (pct >= 90) return 'var(--danger)';
+    if (pct >= 70) return 'var(--warn)';
+    return 'var(--accent)';
+  }
+
+  const chartInstances = [];
+
+  function disposeCharts() {
+    while (chartInstances.length > 0) {
+      try { chartInstances.pop().dispose(); } catch {}
+    }
+  }
+
+  function getThemeColors() {
+    const cs = getComputedStyle(document.documentElement);
+    const fg = cs.getPropertyValue('--fg').trim() || '#1f2328';
+    const dim = cs.getPropertyValue('--dim').trim() || '#656d76';
+    const line = cs.getPropertyValue('--line').trim() || 'rgba(128,128,128,0.16)';
+    const bg = cs.getPropertyValue('--bg').trim() || '#ffffff';
+    const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    return {
+      fg,
+      dim,
+      line,
+      bg,
+      tooltipBg: isDark ? 'rgba(24, 24, 27, 0.94)' : 'rgba(255, 255, 255, 0.96)',
+      tooltipBorder: isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(15, 23, 42, 0.1)',
+    };
+  }
+
+  function initEChart(domId, option) {
+    if (typeof window.echarts === 'undefined') return null;
+    const el = document.getElementById(domId);
+    if (!el) return null;
+    const chart = window.echarts.init(el, null, { renderer: 'svg' });
+    chart.setOption(option);
+    chartInstances.push(chart);
+    return chart;
+  }
+
+  window.addEventListener('resize', () => {
+    for (const c of chartInstances) {
+      try { c.resize(); } catch {}
+    }
+  });
+
+  function renderToolTreemap(toolTreemap) {
+    const groups = Array.isArray(toolTreemap?.groups) ? toolTreemap.groups : [];
+    const total = Number(toolTreemap?.totalTokens) || 0;
+    if (groups.length === 0 || total <= 0) return '';
+
+    const stripHtml = `
+      <div class="tm-strip">
+        ${groups.map((g) => `<div style="width:${g.pct.toFixed(2)}%;background:${esc(g.color)}" title="${esc(g.name)}: ${fmtTok(g.tokens)} (${g.pct.toFixed(1)}%)"></div>`).join('')}
+      </div>
+    `;
+
+    let bodyHtml = '';
+    if (toolViewMode === 'list') {
+      bodyHtml = `
+        <div class="sub-list" style="border:1px solid var(--line);border-radius:8px;overflow:hidden;">
+          ${groups.map((g) => `
+            <div class="model-row">
+              <div class="model-bar-wrap">
+                <div class="model-bar-top">
+                  <span class="model-bar-name"><span class="tm-pill-dot" style="display:inline-block;margin-right:5px;background:${esc(g.color)}"></span>${esc(g.name)}</span>
+                  <span class="num">${fmtTok(g.tokens)} <span class="dim">(${g.pct.toFixed(1)}% · ${g.count}次)</span></span>
+                </div>
+                <div class="model-bar"><div style="width:${Math.min(100, g.pct).toFixed(1)}%;background:${esc(g.color)}"></div></div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    } else {
+      bodyHtml = '<div id="chart-tool-treemap" style="width:100%;height:184px;"></div>';
+    }
+
+    const pillsHtml = `
+      <div class="tm-pills num">
+        ${groups.map((g) => `
+          <span class="tm-pill" title="${esc(g.name)}: ${fmtTok(g.tokens)} (${g.count}次)">
+            <span class="tm-pill-dot" style="background:${esc(g.color)}"></span>
+            <span>${esc(g.name)} ${g.pct.toFixed(1)}%</span>
+          </span>
+        `).join('')}
+      </div>
+    `;
+
+    return `
+      <div class="chart-card">
+        <div class="chart-head">
+          <span class="chart-title">工具调用 Token 构成</span>
+          <div style="display:inline-flex;align-items:center;gap:6px;">
+            <span class="dim num" style="font-size:10.5px;">${fmtTok(total)}</span>
+            <div class="seg-bar">
+              <button class="seg-btn ${toolViewMode === 'treemap' ? 'active' : ''}" data-tool-view="treemap" style="padding:2px 7px;font-size:10.5px;">矩形分布</button>
+              <button class="seg-btn ${toolViewMode === 'list' ? 'active' : ''}" data-tool-view="list" style="padding:2px 7px;font-size:10.5px;">归类占比</button>
+            </div>
+          </div>
+        </div>
+        ${stripHtml}
+        ${bodyHtml}
+        ${pillsHtml}
+      </div>
+    `;
+  }
+
+  function mountToolTreemapChart(toolTreemap) {
+    if (toolViewMode !== 'treemap') return;
+    const groups = Array.isArray(toolTreemap?.groups) ? toolTreemap.groups : [];
+    const total = Number(toolTreemap?.totalTokens) || 0;
+    if (groups.length === 0 || total <= 0) return;
+    const theme = getThemeColors();
+
+    const treeData = groups.map((g) => ({
+      name: g.name,
+      value: g.tokens,
+      pct: g.pct,
+      count: g.count,
+      itemStyle: { color: g.color, borderColor: 'transparent', gapWidth: 2 },
+      children: (g.items || []).map((it) => ({
+        name: it.name,
+        value: it.tokens,
+        pct: it.pct,
+        count: it.count,
+        groupName: g.name,
+        itemStyle: { color: g.color },
+      })),
+    }));
+
+    initEChart('chart-tool-treemap', {
+      tooltip: {
+        confine: true,
+        backgroundColor: theme.tooltipBg,
+        borderColor: theme.tooltipBorder,
+        borderWidth: 1,
+        textStyle: { color: theme.fg, fontSize: 11 },
+        formatter: (info) => {
+          const d = info.data || {};
+          const pctStr = Number.isFinite(d.pct) ? `${d.pct.toFixed(1)}%` : '';
+          const title = d.groupName ? `${esc(d.groupName)} · ${esc(d.name)}` : esc(d.name);
+          return `<div style="font-weight:600;margin-bottom:2px;">${title}</div>`
+            + `<div>Tokens: <b>${fmtTok(d.value)}</b> (${pctStr})</div>`
+            + (d.count ? `<div>调用次数: ${d.count} 次</div>` : '');
+        },
+      },
+      series: [{
+        type: 'treemap',
+        left: 0,
+        right: 0,
+        top: 2,
+        bottom: 2,
+        roam: false,
+        nodeClick: false,
+        breadcrumb: { show: false },
+        itemStyle: {
+          borderRadius: 5,
+          borderColor: theme.bg === 'transparent' ? 'rgba(128,128,128,0.2)' : theme.bg,
+          borderWidth: 1.5,
+          gapWidth: 2,
+        },
+        upperLabel: {
+          show: true,
+          height: 18,
+          color: '#111827',
+          fontSize: 10,
+          fontWeight: 600,
+          formatter: (p) => `${p.name} ${Number(p.data?.pct || 0).toFixed(0)}%`,
+        },
+        label: {
+          show: true,
+          color: '#111827',
+          fontSize: 10.5,
+          fontWeight: 600,
+          formatter: (p) => `${p.name}\n${fmtTok(p.value)}`,
+        },
+        levels: [
+          {
+            itemStyle: { borderWidth: 0, gapWidth: 3 },
+            upperLabel: { show: false },
+          },
+          {
+            itemStyle: { borderRadius: 6, gapWidth: 2, borderWidth: 1.5 },
+            upperLabel: { show: true },
+          },
+        ],
+        data: treeData,
+      }],
+    });
+  }
+
+  function renderTimelineBarChart(timeline) {
+    if (!Array.isArray(timeline) || timeline.length === 0) return '';
+    const maxTotal = Math.max(1, ...timeline.map((b) => b.total || 0));
+    return `
+      <div class="chart-card">
+        <div class="chart-head">
+          <span class="chart-title">时段消耗趋势</span>
+          <span class="dim num" style="font-size:10.5px;">峰值 ${fmtTok(maxTotal)}</span>
+        </div>
+        <div id="chart-timeline" style="width:100%;height:152px;"></div>
+      </div>
+    `;
+  }
+
+  function mountTimelineChart(timeline) {
+    if (!Array.isArray(timeline) || timeline.length === 0) return;
+    const theme = getThemeColors();
+    const labels = timeline.map((b) => b.label);
+
+    initEChart('chart-timeline', {
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'shadow' },
+        confine: true,
+        backgroundColor: theme.tooltipBg,
+        borderColor: theme.tooltipBorder,
+        borderWidth: 1,
+        textStyle: { color: theme.fg, fontSize: 11 },
+        formatter: (params) => {
+          const idx = params?.[0]?.dataIndex ?? 0;
+          const b = timeline[idx];
+          if (!b) return '';
+          return `<div style="font-weight:600;margin-bottom:3px;">${esc(b.label)} · ${b.turns} 轮</div>`
+            + `<div>总计: <b>${fmtTok(b.total)}</b></div>`
+            + `<div><span style="color:#60a5fa">●</span> 缓存读取: ${fmtTok(b.cacheRead)}</div>`
+            + `<div><span style="color:#3b82f6">●</span> 新输入: ${fmtTok(b.uncachedInput)}</div>`
+            + `<div><span style="color:#f59e0b">●</span> 输出: ${fmtTok(b.output)}</div>`;
+        },
+      },
+      legend: {
+        bottom: 0,
+        left: 0,
+        itemWidth: 8,
+        itemHeight: 8,
+        icon: 'circle',
+        textStyle: { color: theme.dim, fontSize: 10.5 },
+        data: ['缓存读取', '新输入', '输出'],
+      },
+      grid: { top: 10, right: 8, bottom: 42, left: 42 },
+      xAxis: {
+        type: 'category',
+        data: labels,
+        axisLine: { lineStyle: { color: theme.line } },
+        axisTick: { show: false },
+        axisLabel: { color: theme.dim, fontSize: 10, hideOverlap: true },
+      },
+      yAxis: {
+        type: 'value',
+        splitNumber: 3,
+        axisLabel: { color: theme.dim, fontSize: 10, formatter: (v) => fmtTok(v) },
+        splitLine: { lineStyle: { color: theme.line, type: 'dashed' } },
+      },
+      series: [
+        {
+          name: '缓存读取',
+          type: 'bar',
+          stack: 'tok',
+          barMaxWidth: 22,
+          itemStyle: { color: '#60a5fa' },
+          data: timeline.map((b) => b.cacheRead || 0),
+        },
+        {
+          name: '新输入',
+          type: 'bar',
+          stack: 'tok',
+          barMaxWidth: 22,
+          itemStyle: { color: '#3b82f6' },
+          data: timeline.map((b) => b.uncachedInput || 0),
+        },
+        {
+          name: '输出',
+          type: 'bar',
+          stack: 'tok',
+          barMaxWidth: 22,
+          itemStyle: { color: '#f59e0b', borderRadius: [3, 3, 0, 0] },
+          data: timeline.map((b) => b.output || 0),
+        },
+      ],
+    });
+  }
+
+  function renderDonutChart(totals) {
+    const total = Number(totals.all) || 0;
+    if (total <= 0) return '';
+    const segments = [
+      { label: '缓存读取', val: totals.cacheRead || 0, color: '#60a5fa' },
+      { label: '新输入', val: totals.uncachedInput || 0, color: '#3b82f6' },
+      { label: '输出', val: totals.output || 0, color: '#f59e0b' },
+    ].filter((s) => s.val > 0);
+
+    return `
+      <div class="chart-card">
+        <div class="chart-head">
+          <span class="chart-title">Token 构成分布</span>
+          <span class="dim num" style="font-size:10.5px;">共 ${fmtTok(total)}</span>
+        </div>
+        <div class="donut-wrap">
+          <div id="chart-donut" style="width:92px;height:92px;flex:none;"></div>
+          <div class="donut-rows num">
+            ${segments.map((s) => `
+              <div class="donut-row">
+                <span class="chart-leg-item"><span class="chart-leg-dot" style="background:${s.color}"></span>${s.label}</span>
+                <span><b>${fmtTok(s.val)}</b> <span class="dim">${((s.val / total) * 100).toFixed(1)}%</span></span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function mountDonutChart(totals) {
+    const total = Number(totals?.all) || 0;
+    if (total <= 0) return;
+    const theme = getThemeColors();
+    const data = [
+      { name: '缓存读取', value: totals.cacheRead || 0, itemStyle: { color: '#60a5fa' } },
+      { name: '新输入', value: totals.uncachedInput || 0, itemStyle: { color: '#3b82f6' } },
+      { name: '输出', value: totals.output || 0, itemStyle: { color: '#f59e0b' } },
+    ].filter((d) => d.value > 0);
+
+    initEChart('chart-donut', {
+      tooltip: {
+        trigger: 'item',
+        confine: true,
+        backgroundColor: theme.tooltipBg,
+        borderColor: theme.tooltipBorder,
+        borderWidth: 1,
+        textStyle: { color: theme.fg, fontSize: 11 },
+        formatter: (p) => `${esc(p.name)}<br/><b>${fmtTok(p.value)}</b> (${Number(p.percent || 0).toFixed(1)}%)`,
+      },
+      title: {
+        text: fmtTok(total),
+        left: 'center',
+        top: 'center',
+        textStyle: { color: theme.fg, fontSize: 12, fontWeight: 700 },
+      },
+      series: [{
+        type: 'pie',
+        radius: ['58%', '86%'],
+        center: ['50%', '50%'],
+        padAngle: 2,
+        itemStyle: { borderRadius: 4 },
+        label: { show: false },
+        emphasis: { scale: true, scaleSize: 3 },
+        data,
+      }],
+    });
+  }
+
+  function renderTopBar(extraRightHtml = '') {
+    return `
+      <div class="header">
+        <div class="seg-bar">
+          <button class="seg-btn ${viewMode === 'session' ? 'active' : ''}" data-view="session">当前会话</button>
+          <button class="seg-btn ${viewMode === 'summary' ? 'active' : ''}" data-view="summary">全局统计</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          ${extraRightHtml}
+          <button id="btn-refresh" class="icon-btn" title="立即刷新">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M13.5 8a5.5 5.5 0 1 1-1.4-3.65"/>
+              <path d="M13.5 2.5v2.75h-2.75"/>
+            </svg>
+            <span>刷新</span>
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  function bindGlobalEvents(hostCid) {
+    appEl.querySelectorAll('.seg-btn[data-view]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const next = btn.getAttribute('data-view');
+        if (!next || next === viewMode) return;
+        viewMode = next;
+        lastPayload = '';
+        refresh(true);
+      });
+    });
+    document.getElementById('btn-refresh')?.addEventListener('click', () => refresh(true));
+  }
+
+  function renderSummary(summary) {
+    disposeCharts();
+    lastSummary = summary;
+    const hostCid = activeSidecarConversation();
+    if (!summary || summary.error) {
+      appEl.innerHTML = `${renderTopBar()}<p class="empty">加载失败：${esc(summary?.message || summary?.error || '未知错误')}</p>`;
+      bindGlobalEvents(hostCid);
+      return;
+    }
+
+    const totals = summary.totals || {};
+    const cache = summary.cache || {};
+    const speed = summary.speed || {};
+    const models = Array.isArray(summary.models) ? summary.models : [];
+    const topConvs = Array.isArray(summary.topConversations) ? summary.topConversations : [];
+    const ranges = [
+      { id: 'today', label: '今天' },
+      { id: '7d', label: '近 7 天' },
+      { id: '30d', label: '近 30 天' },
+      { id: 'all', label: '全部' },
+    ];
+    const updatedTime = summary.updatedAt ? new Date(summary.updatedAt).toLocaleTimeString('zh-CN', { hour12: false }) : '';
+
+    appEl.innerHTML = `
+      ${renderTopBar()}
+
+      <div class="scope-row">
+        <div class="seg-bar seg-sm">
+          <button class="seg-btn ${summaryScope === 'workspace' ? 'active' : ''}" data-scope="workspace">当前工作区</button>
+          <button class="seg-btn ${summaryScope === 'all' ? 'active' : ''}" data-scope="all">全部</button>
+        </div>
+        <span class="dim num" style="font-size:11px;">${summaryScope === 'all' ? '跨工作区全部会话' : '仅当前工作区'}</span>
+      </div>
+
+      <div class="range-row">
+        <div class="seg-bar">
+          ${ranges.map((r) => `<button class="seg-btn ${summaryRange === r.id ? 'active' : ''}" data-range="${r.id}">${r.label}</button>`).join('')}
+        </div>
+        <span class="dim num" style="font-size:11px;">${summary.conversations || 0} 会话 · ${summary.turns || 0} 轮</span>
+      </div>
+
+      <div class="bento">
+        <div class="kpi">
+          <div class="kpi-head"><span>Token 总消耗</span><span class="kpi-tag">合计</span></div>
+          <div class="kpi-val num">${fmtTok(totals.all)}</div>
+          <div class="kpi-sub num">${summary.conversations || 0} 个活跃会话</div>
+        </div>
+
+        <div class="kpi">
+          <div class="kpi-head"><span>缓存命中 &amp; 均速</span><span class="kpi-tag">性能</span></div>
+          <div class="kpi-val num" style="color:var(--ok)">${fmtPct(cache.hitRate)}</div>
+          <div class="kpi-sub num">均速 ${fmtSpeed(speed.avgTokensPerSec)} · TTFT ${fmtSec(speed.avgTtftSec)}</div>
+        </div>
+
+        <div class="kpi">
+          <div class="kpi-head"><span>累计输入</span><span class="kpi-tag">省 ${fmtTok(cache.savedInputTokens)}</span></div>
+          <div class="kpi-val num">${fmtTok(totals.inputAll)}</div>
+          <div class="kpi-sub num">新 ${fmtTok(totals.uncachedInput)} · 缓存 ${fmtTok(totals.cacheRead)}</div>
+        </div>
+
+        <div class="kpi">
+          <div class="kpi-head"><span>累计输出</span><span class="kpi-tag">${summary.turns || 0} 轮</span></div>
+          <div class="kpi-val num">${fmtTok(totals.output)}</div>
+          <div class="kpi-sub num">思 ${fmtTok(totals.thinking)} · 答 ${fmtTok(totals.response)}</div>
+        </div>
+      </div>
+
+      ${renderTimelineBarChart(summary.timeline)}
+      ${renderDonutChart(totals)}
+
+      ${models.length > 0 ? `
+        <div class="sub-card">
+          <div class="turns-toggle" style="cursor:default;">
+            <span>按模型分布</span>
+            <span class="dim num" style="font-weight:400;font-size:11px;">${models.length} 个模型</span>
+          </div>
+          <div class="sub-list">
+            ${models.map((m) => `
+              <div class="model-row">
+                <div class="model-bar-wrap">
+                  <div class="model-bar-top">
+                    <span class="model-bar-name">${esc(m.modelName)}</span>
+                    <span class="num">${fmtTok(m.tokens)} <span class="dim">(${fmtPct(m.pct)} · ${m.turns}轮)</span></span>
+                  </div>
+                  <div class="model-bar"><div style="width:${Math.min(100, m.pct).toFixed(1)}%"></div></div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+
+      <div class="sub-card">
+        <div class="turns-toggle" style="cursor:default;">
+          <span>会话消耗排行</span>
+          <span class="dim num" style="font-weight:400;font-size:11px;">Top ${topConvs.length}</span>
+        </div>
+        <div class="sub-list">
+          ${topConvs.length === 0
+            ? '<p class="dim" style="font-size:11.5px;padding:12px;text-align:center;margin:0;">该时段暂无调用记录</p>'
+            : topConvs.map((c) => `
+              <div class="sub-row" data-conv-id="${esc(c.id)}" title="点击切换到该会话详情">
+                <div class="sub-left">
+                  <div class="sub-title">
+                    <span class="sub-role">${esc(c.title)}</span>
+                    ${c.subagentCount > 0 ? `<span class="state-pill idle num">+${c.subagentCount} 子代理</span>` : ''}
+                  </div>
+                  <div class="sub-meta num">
+                    ${esc(c.modelName)} · ${c.turns} 轮 · 命中 ${fmtPct(c.cacheHitRate)}
+                  </div>
+                </div>
+                <div class="sub-right num">
+                  <div class="sub-ctx">${fmtTok(c.totalTokens)}</div>
+                </div>
+              </div>
+            `).join('')}
+        </div>
+      </div>
+
+      <footer class="num">
+        <span>时段: ${ranges.find((r) => r.id === summaryRange)?.label || summaryRange}</span>
+        <span>${esc(updatedTime)}</span>
+      </footer>
+    `;
+
+    bindGlobalEvents(hostCid);
+    appEl.querySelectorAll('.seg-btn[data-scope]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const next = btn.getAttribute('data-scope');
+        if (!next || next === summaryScope) return;
+        summaryScope = next;
+        lastPayload = '';
+        refresh(true);
+      });
+    });
+    appEl.querySelectorAll('.seg-btn[data-range]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const next = btn.getAttribute('data-range');
+        if (!next || next === summaryRange) return;
+        summaryRange = next;
+        lastPayload = '';
+        refresh(true);
+      });
+    });
+    appEl.querySelectorAll('.sub-row[data-conv-id]').forEach((el) => {
+      el.addEventListener('click', () => {
+        const cid = el.getAttribute('data-conv-id');
+        if (!cid) return;
+        selectedConversationId = cid === hostCid ? '' : cid;
+        viewMode = 'session';
+        currentPage = 1;
+        lastPayload = '';
+        refresh(true);
+      });
+    });
+    mountTimelineChart(summary.timeline);
+    mountDonutChart(totals);
+  }
+
+  function render(data) {
+    disposeCharts();
+    lastData = data;
+    if (!data || data.error === 'no-conversation') {
+      appEl.innerHTML = `${renderTopBar()}<p class="empty">暂无活跃会话，发送一条消息后将自动显示。</p>`;
+      bindGlobalEvents(activeSidecarConversation());
+      return;
+    }
+    if (data.error) {
+      appEl.innerHTML = `<p class="empty">加载失败：${esc(data.message || data.error)}</p>`;
+      return;
+    }
+
+    const isRunning = String(data.status || '').includes('RUNNING');
+    const ctx = data.context || {};
+    const bd = data.breakdown || {};
+    const totals = data.totals || {};
+    const cache = data.cache || {};
+    const speed = data.speed || {};
+    const allTurns = Array.isArray(data.allTurns) ? data.allTurns : (Array.isArray(data.recentTurns) ? data.recentTurns : []);
+
+    const ctxPct = Math.max(0, Math.min(100, Number(ctx.pct) || 0));
+    const tone = toneColor(ctxPct);
+
+    const hostCid = activeSidecarConversation();
+
+    // 100-dot grid
+    const dots = Array.isArray(bd.dots) ? bd.dots : new Array(100).fill(null);
+    const dotsHtml = dots.map((c) =>
+      c ? `<span class="ctx-dot" style="background:${esc(c)}"></span>` : '<span class="ctx-dot"></span>',
+    ).join('');
+
+    const cats = Array.isArray(bd.categories) ? bd.categories : [];
+    const catsHtml = cats.map((c) => `
+      <div class="cat-row">
+        <span class="cat-mark" style="background:${esc(c.color)}"></span>
+        <span>${esc(c.name)}</span>
+        <span class="cat-tok num">${fmtTok(c.tokens)}</span>
+        <span class="cat-pct num">${fmtPct(c.pct)}</span>
+      </div>
+    `).join('');
+
+    const freeHtml = ctx.max > 0 ? `
+      <div class="cat-row">
+        <span class="cat-mark free"></span>
+        <span class="dim">剩余可用 (Free space)</span>
+        <span class="cat-tok num dim">${fmtTok(bd.free?.tokens ?? ctx.free)}</span>
+        <span class="cat-pct num">${fmtPct(bd.free?.pct ?? (100 - ctxPct))}</span>
+      </div>
+    ` : '';
+
+    // Paginated turns
+    const totalPages = Math.max(1, Math.ceil(allTurns.length / PAGE_SIZE));
+    if (currentPage > totalPages) currentPage = totalPages;
+    if (currentPage < 1) currentPage = 1;
+    const startIdx = (currentPage - 1) * PAGE_SIZE;
+    const pageTurns = allTurns.slice(startIdx, startIdx + PAGE_SIZE);
+
+    const turnsBodyHtml = turnsExpanded ? `
+      <div class="turn-list">
+        ${pageTurns.length === 0
+          ? '<p class="dim" style="font-size:11.5px;padding:12px;text-align:center;margin:0;">暂无模型调用记录</p>'
+          : pageTurns.map((t) => {
+              const tip = `输入 ${fmtTok(t.promptTotal)} (新 ${fmtTok(t.inputTokens)} / 缓存 ${fmtTok(t.cacheReadTokens)})\n输出 ${fmtTok(t.outputTokens)} (思考 ${fmtTok(t.thinkingOutputTokens)} / 正文 ${fmtTok(t.responseOutputTokens)})\nTTFT ${fmtSec(t.ttftSec)} · 流式 ${fmtSec(t.streamingSec)}`;
+              return `
+                <div class="turn-row" title="${esc(tip)}">
+                  <div class="turn-left">
+                    <div class="turn-title">
+                      <span class="turn-num num">#${t.turnIndex}</span>
+                      <span class="turn-model">${esc(t.modelName)}</span>
+                    </div>
+                    <div class="turn-sub num">
+                      ↑${fmtTok(t.promptTotal)} (命中 ${fmtPct(t.cacheHitRate)}) · ↓${fmtTok(t.outputTokens)}
+                    </div>
+                  </div>
+                  <div class="turn-right num">
+                    <div class="turn-spd">${fmtSpeed(t.tokensPerSec)}</div>
+                    <div class="turn-dur">TTFT ${fmtSec(t.ttftSec)}</div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+      </div>
+      ${allTurns.length > PAGE_SIZE ? `
+        <div class="pager num">
+          <span>第 ${currentPage} / ${totalPages} 页 · 共 ${allTurns.length} 轮</span>
+          <div class="pager-btns">
+            <button id="btn-prev" class="icon-btn" ${currentPage <= 1 ? 'disabled' : ''}>上一页</button>
+            <button id="btn-next" class="icon-btn" ${currentPage >= totalPages ? 'disabled' : ''}>下一页</button>
+          </div>
+        </div>
+      ` : ''}
+    ` : '';
+
+    const allSubagents = Array.isArray(data.subagents) ? data.subagents : [];
+    const swarmWorkers = allSubagents.filter((s) => s.isSwarm);
+    const normalSubagents = allSubagents.filter((s) => !s.isSwarm);
+
+    const swarmSubTotalTok = swarmWorkers.reduce((sum, s) => sum + (Number(s?.totals?.all) || 0), 0);
+    const swarmRunningCount = swarmWorkers.filter((s) => !s.killed && String(s.status || '').includes('RUNNING')).length;
+    const swarmColors = ['#3b82f6', '#10b981', '#f59e0b', '#a855f7', '#ec4899', '#06b6d4', '#84cc16'];
+    const teamTotalTok = (Number(totals.all) || 0) + swarmSubTotalTok;
+
+    function renderAgentRows(list, useShortName) {
+      return list.map((s) => {
+        const sRunning = !s.killed && String(s.status || '').includes('RUNNING');
+        const sDotClass = s.killed ? 'killed' : (sRunning ? 'running' : '');
+        const stateText = s.killed ? '已终止' : (sRunning ? '运行中' : '待命');
+        const stateClass = s.killed ? 'killed' : (sRunning ? 'running' : 'idle');
+        const sCtx = s.context || {};
+        const sPct = Math.max(0, Math.min(100, Number(sCtx.pct) || 0));
+        const sTone = toneColor(sPct);
+        const sSpeed = s.speed?.latestTokensPerSec != null ? `${s.speed.latestTokensPerSec.toFixed(0)} t/s` : '-';
+        const sHit = s.cache?.overallHitRate != null ? `${s.cache.overallHitRate.toFixed(0)}%` : '-';
+        const displayName = (useShortName && s.scriptName) ? s.scriptName : s.role;
+        return `
+          <div class="sub-row" data-sub-id="${esc(s.id)}" title="${esc(s.role)} · 点击查看详情">
+            <div class="sub-left">
+              <div class="sub-title">
+                <span class="sub-dot ${sDotClass}"></span>
+                <span class="sub-role">${esc(displayName)}</span>
+                <span class="state-pill ${stateClass}">${stateText}</span>
+              </div>
+              <div class="sub-meta num">
+                ${esc(s.modelName || '-')} · ${s.turnCount || 0} 轮 · ${sSpeed} · 命中 ${sHit} · ${fmtTok(s.totals?.all || 0)}
+              </div>
+            </div>
+            <div class="sub-right num">
+              <div class="sub-ctx" style="color:${sTone}">${sCtx.max > 0 ? fmtPct(sPct) : fmtTok(sCtx.used || 0)}</div>
+              <div class="sub-bar"><div style="width:${sPct.toFixed(1)}%;background:${sTone}"></div></div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    const swarmDistHtml = (swarmWorkers.length > 0 && swarmExpanded && teamTotalTok > 0) ? (() => {
+      const members = [
+        { label: '主代理', tokens: Number(totals.all) || 0, color: '#64748b' },
+        ...swarmWorkers.map((s, idx) => ({
+          label: s.scriptName || s.role,
+          tokens: Number(s?.totals?.all) || 0,
+          color: swarmColors[idx % swarmColors.length],
+        })),
+      ].filter((m) => m.tokens > 0);
+      return `
+        <div class="swarm-dist">
+          <div class="swarm-dist-head num">
+            <span>全队 Token 分布</span>
+            <span>主+从共 <b>${fmtTok(teamTotalTok)}</b></span>
+          </div>
+          <div class="swarm-stack">
+            ${members.map((m) => {
+              const w = (m.tokens / teamTotalTok) * 100;
+              return `<div class="swarm-seg" style="width:${w.toFixed(2)}%;background:${m.color}" title="${esc(m.label)}: ${fmtTok(m.tokens)} (${w.toFixed(1)}%)"></div>`;
+            }).join('')}
+          </div>
+          <div class="swarm-legend num">
+            ${members.map((m) => `
+              <span class="swarm-leg-item">
+                <span class="swarm-leg-dot" style="background:${m.color}"></span>
+                <span>${esc(m.label)} ${fmtTok(m.tokens)}</span>
+              </span>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    })() : '';
+
+    const swarmHtml = swarmWorkers.length > 0 ? `
+      <div class="sub-card">
+        <button id="btn-toggle-swarm" class="turns-toggle">
+          <span class="turns-toggle-left">
+            <svg class="chevron ${swarmExpanded ? 'open' : ''}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 4l4 4-4 4"/>
+            </svg>
+            <span>Swarm 团队 (${swarmWorkers.length})</span>
+            ${swarmRunningCount > 0 ? `<span class="state-pill running num">${swarmRunningCount} 运行中</span>` : ''}
+          </span>
+          <span class="dim num" style="font-weight:400;font-size:11px;">成员 ${fmtTok(swarmSubTotalTok)} tok</span>
+        </button>
+        ${swarmDistHtml}
+        ${swarmExpanded ? `<div class="sub-list">${renderAgentRows(swarmWorkers, true)}</div>` : ''}
+      </div>
+    ` : '';
+
+    const normalSubTok = normalSubagents.reduce((sum, s) => sum + (Number(s?.totals?.all) || 0), 0);
+    const normalRunningCount = normalSubagents.filter((s) => !s.killed && String(s.status || '').includes('RUNNING')).length;
+    const subagentsHtml = normalSubagents.length > 0 ? `
+      <div class="sub-card">
+        <button id="btn-toggle-subagents" class="turns-toggle">
+          <span class="turns-toggle-left">
+            <svg class="chevron ${subagentsExpanded ? 'open' : ''}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 4l4 4-4 4"/>
+            </svg>
+            <span>子代理 (${normalSubagents.length})</span>
+            ${normalRunningCount > 0 ? `<span class="state-pill running num">${normalRunningCount} 运行中</span>` : ''}
+          </span>
+          <span class="dim num" style="font-weight:400;font-size:11px;">合计 ${fmtTok(normalSubTok)} tok</span>
+        </button>
+        ${subagentsExpanded ? `<div class="sub-list">${renderAgentRows(normalSubagents, false)}</div>` : ''}
+      </div>
+    ` : '';
+
+    const backTarget = data.parentConversationId || data.rootConversationId || (selectedConversationId && hostCid && selectedConversationId !== hostCid ? hostCid : '');
+    const showBackBar = Boolean(backTarget && backTarget !== data.cascadeId);
+    const backBarHtml = showBackBar ? `
+      <div class="back-bar">
+        <span class="dim">${data.parentConversationId ? '当前正在查看子代理' : '当前正在查看其他会话'}</span>
+        <button id="btn-back-parent" class="back-btn" data-target="${esc(backTarget)}">
+          ← ${data.parentConversationId ? '返回主代理' : '回到当前会话'}
+        </button>
+      </div>
+    ` : '';
+
+    const updatedTime = data.updatedAt ? new Date(data.updatedAt).toLocaleTimeString('zh-CN', { hour12: false }) : '';
+
+    appEl.innerHTML = `
+      ${renderTopBar()}
+
+      <div style="margin-bottom:10px;">
+        <div class="model-badge" title="${esc(data.status)}">
+          <span class="dot ${isRunning ? 'running' : ''}"></span>
+          <span class="model-name">${esc(data.modelName)}</span>
+        </div>
+      </div>
+
+      ${backBarHtml}
+
+      <div class="hero">
+        <div class="hero-top">
+          <span class="hero-label">上下文窗口分布（每点 = 1%）</span>
+          <span class="pct-pill num" style="color:${tone};background:color-mix(in srgb, ${tone} 12%, transparent);border-color:color-mix(in srgb, ${tone} 26%, transparent)">
+            ${ctx.max > 0 ? fmtPct(ctxPct) : '-'}
+          </span>
+        </div>
+        <div class="hero-nums num">
+          <span class="hero-used">${fmtTok(ctx.used)}</span>
+          <span class="hero-max">/ ${ctx.max > 0 ? fmtTok(ctx.max) : '未知上限'} tokens</span>
+        </div>
+        <div class="dot-grid" title="每个圆点约代表上下文窗口的 1%">${dotsHtml}</div>
+        <div class="cat-list">
+          ${catsHtml}
+          ${freeHtml}
+        </div>
+      </div>
+
+      <div class="bento">
+        <div class="kpi">
+          <div class="kpi-head"><span>生成速度</span><span class="kpi-tag">最新</span></div>
+          <div class="kpi-val num" style="color:var(--ok)">${fmtSpeed(speed.latestTokensPerSec)}</div>
+          <div class="kpi-sub num">
+            均值 ${fmtSpeed(speed.avgTokensPerSec)} · TTFT ${fmtSec(speed.latestTtftSec)}
+          </div>
+        </div>
+
+        <div class="kpi">
+          <div class="kpi-head"><span>缓存命中率</span><span class="kpi-tag">累计</span></div>
+          <div class="kpi-val num">${fmtPct(cache.overallHitRate)}</div>
+          <div class="kpi-sub num">
+            本轮 ${fmtPct(cache.latestHitRate)} · 省 ${fmtTok(cache.savedInputTokens)}
+          </div>
+        </div>
+
+        <div class="kpi">
+          <div class="kpi-head"><span>累计输入</span><span class="kpi-tag">${data.turnCount} 轮</span></div>
+          <div class="kpi-val num">${fmtTok(totals.inputAll)}</div>
+          <div class="kpi-sub num">
+            新 ${fmtTok(totals.uncachedInput)} · 缓存 ${fmtTok(totals.cacheRead)}
+          </div>
+        </div>
+
+        <div class="kpi">
+          <div class="kpi-head"><span>累计输出</span><span class="kpi-tag">总 ${fmtTok(totals.all)}</span></div>
+          <div class="kpi-val num">${fmtTok(totals.output)}</div>
+          <div class="kpi-sub num">
+            思 ${fmtTok(totals.thinking)} · 答 ${fmtTok(totals.response)}
+          </div>
+        </div>
+      </div>
+
+      ${renderToolTreemap(data.toolTreemap)}
+      ${swarmHtml}
+      ${subagentsHtml}
+
+      <div class="turns-card">
+        <button id="btn-toggle-turns" class="turns-toggle">
+          <span class="turns-toggle-left">
+            <svg class="chevron ${turnsExpanded ? 'open' : ''}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 4l4 4-4 4"/>
+            </svg>
+            <span>调用明细</span>
+          </span>
+          <span class="dim num" style="font-weight:400;font-size:11px;">${allTurns.length} 轮历史</span>
+        </button>
+        ${turnsBodyHtml}
+      </div>
+
+      <footer class="num">
+        <span>会话 ${esc((data.cascadeId || '').slice(0, 8))} · ${data.numTotalSteps || 0} 步</span>
+        <span>${esc(updatedTime)}</span>
+      </footer>
+    `;
+
+    bindGlobalEvents(hostCid);
+    mountToolTreemapChart(data.toolTreemap);
+    appEl.querySelectorAll('.seg-btn[data-tool-view]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const next = btn.getAttribute('data-tool-view');
+        if (!next || next === toolViewMode) return;
+        toolViewMode = next;
+        render(lastData);
+      });
+    });
+    document.getElementById('btn-back-parent')?.addEventListener('click', (e) => {
+      const target = e.currentTarget.getAttribute('data-target') || '';
+      selectedConversationId = target === hostCid ? '' : target;
+      currentPage = 1;
+      refresh(true);
+    });
+    document.getElementById('btn-toggle-swarm')?.addEventListener('click', () => {
+      swarmExpanded = !swarmExpanded;
+      render(lastData);
+    });
+    document.getElementById('btn-toggle-subagents')?.addEventListener('click', () => {
+      subagentsExpanded = !subagentsExpanded;
+      render(lastData);
+    });
+    document.getElementById('btn-toggle-turns')?.addEventListener('click', () => {
+      turnsExpanded = !turnsExpanded;
+      render(lastData);
+    });
+    document.getElementById('btn-prev')?.addEventListener('click', () => {
+      if (currentPage > 1) {
+        currentPage -= 1;
+        render(lastData);
+      }
+    });
+    document.getElementById('btn-next')?.addEventListener('click', () => {
+      if (currentPage < totalPages) {
+        currentPage += 1;
+        render(lastData);
+      }
+    });
+    appEl.querySelectorAll('.sub-row[data-sub-id]').forEach((el) => {
+      el.addEventListener('click', () => {
+        const sid = el.getAttribute('data-sub-id');
+        if (!sid) return;
+        selectedConversationId = sid === hostCid ? '' : sid;
+        currentPage = 1;
+        refresh(true);
+      });
+    });
+  }
+
+  function serializePayload(obj) {
+    if (!obj || typeof obj !== 'object') return String(obj);
+    const { updatedAt, ...rest } = obj;
+    return JSON.stringify(rest);
+  }
+
+  async function refresh(force = false) {
+    if (document.hidden && !force) return;
+    if (viewMode === 'summary') {
+      try {
+        const res = await doFetch(`/api/summary?range=${encodeURIComponent(summaryRange)}&scope=${encodeURIComponent(summaryScope)}`);
+        const summary = await res.json();
+        const serialized = serializePayload(summary);
+        if (force || serialized !== lastPayload) {
+          lastPayload = serialized;
+          renderSummary(summary);
+        }
+      } catch (err) {
+        disposeCharts();
+        appEl.innerHTML = `${renderTopBar()}<p class="empty">请求出错：${esc(err.message)}</p>`;
+        bindGlobalEvents(activeSidecarConversation());
+      }
+      return;
+    }
+
+    const cid = selectedConversationId || activeSidecarConversation();
+    try {
+      const qs = cid ? `?conversationId=${encodeURIComponent(cid)}` : '';
+      const metricsRes = await doFetch(`/api/metrics${qs}`);
+      const data = await metricsRes.json();
+      const serialized = serializePayload(data);
+      if (force || serialized !== lastPayload) {
+        lastPayload = serialized;
+        render(data);
+      }
+    } catch (err) {
+      disposeCharts();
+      appEl.innerHTML = `<p class="empty">请求出错：${esc(err.message)}</p>`;
+    }
+  }
+
+  refresh(true);
+  setInterval(() => refresh(false), POLL_MS);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) refresh(false);
+  });
+})();
+</script>
+</body>
+</html>

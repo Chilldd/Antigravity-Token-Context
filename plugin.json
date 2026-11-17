@@ -1,0 +1,12 @@
+{
+  "name": "agy-context-panel",
+  "displayName": "Context & Token Monitor",
+  "description": "实时查看当前会话的上下文窗口占用比例、Token 输入/输出/思考明细、缓存命中率与生成速度（tok/s & TTFT）。",
+  "version": "1.0.0",
+  "logo": "assets/logo.svg",
+  "suggestedPrompts": [
+    "打开上下文与 Token 监控面板",
+    "分析当前会话的缓存命中率和 Token 消耗情况",
+    "检查最近几轮对话的上下文增长和生成速度"
+  ]
+}
