@@ -274,6 +274,8 @@
   .icon-btn:hover:not(:disabled) { color: var(--fg); background: var(--surface-hover); border-color: color-mix(in srgb, var(--fg) 20%, transparent); }
   .icon-btn:disabled { opacity: 0.4; cursor: default; }
   .icon-btn svg { width: 13px; height: 13px; }
+  .icon-btn.loading svg { animation: spin 0.7s linear infinite; }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
   .back-bar {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -492,7 +494,8 @@
 
 <script>
 (() => {
-  const POLL_MS = 2500;
+  const SESSION_POLL_MS = 2500;
+  const SUMMARY_POLL_MS = 60000;
   const PAGE_SIZE = 10;
   const doFetch = (window.sidecar && window.sidecar.fetch) ? window.sidecar.fetch.bind(window.sidecar) : fetch;
   const params = new URLSearchParams(location.search);
@@ -505,7 +508,11 @@
   let selectedConversationId = '';
   let lastData = null;
   let lastSummary = null;
-  let lastPayload = '';
+  let lastSessionPayload = '';
+  let lastSummaryPayload = '';
+  let lastSummaryFetchedAt = 0;
+  let pollTimer = null;
+  let refreshSeq = 0;
   let turnsExpanded = false; // default collapsed
   let swarmExpanded = false; // default collapsed
   let subagentsExpanded = false; // default collapsed
@@ -903,12 +910,12 @@
         </div>
         <div style="display:flex;align-items:center;gap:6px;">
           ${extraRightHtml}
-          <button id="btn-refresh" class="icon-btn" title="立即刷新">
+          <button id="btn-refresh" class="icon-btn" title="${viewMode === 'summary' ? '手动刷新全局统计（自动刷新间隔 60s）' : '立即刷新当前会话'}">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
               <path d="M13.5 8a5.5 5.5 0 1 1-1.4-3.65"/>
               <path d="M13.5 2.5v2.75h-2.75"/>
             </svg>
-            <span>刷新</span>
+            <span>${viewMode === 'summary' ? '手动刷新' : '刷新'}</span>
           </button>
         </div>
       </div>
@@ -921,11 +928,19 @@
         const next = btn.getAttribute('data-view');
         if (!next || next === viewMode) return;
         viewMode = next;
-        lastPayload = '';
+        if (viewMode === 'summary') {
+          lastSummaryPayload = '';
+        } else {
+          lastSessionPayload = '';
+        }
+        resetPollTimer();
         refresh(true);
       });
     });
-    document.getElementById('btn-refresh')?.addEventListener('click', () => refresh(true));
+    document.getElementById('btn-refresh')?.addEventListener('click', () => {
+      resetPollTimer();
+      refresh(true);
+    });
   }
 
   function renderSummary(summary) {
@@ -1048,7 +1063,7 @@
       </div>
 
       <footer class="num">
-        <span>时段: ${ranges.find((r) => r.id === summaryRange)?.label || summaryRange}</span>
+        <span>时段: ${ranges.find((r) => r.id === summaryRange)?.label || summaryRange} · 每 60s 自动更新</span>
         <span>${esc(updatedTime)}</span>
       </footer>
     `;
@@ -1059,7 +1074,8 @@
         const next = btn.getAttribute('data-scope');
         if (!next || next === summaryScope) return;
         summaryScope = next;
-        lastPayload = '';
+        lastSummaryPayload = '';
+        resetPollTimer();
         refresh(true);
       });
     });
@@ -1068,7 +1084,8 @@
         const next = btn.getAttribute('data-range');
         if (!next || next === summaryRange) return;
         summaryRange = next;
-        lastPayload = '';
+        lastSummaryPayload = '';
+        resetPollTimer();
         refresh(true);
       });
     });
@@ -1079,7 +1096,8 @@
         selectedConversationId = cid === hostCid ? '' : cid;
         viewMode = 'session';
         currentPage = 1;
-        lastPayload = '';
+        lastSessionPayload = '';
+        resetPollTimer();
         refresh(true);
       });
     });
@@ -1448,45 +1466,88 @@
     return JSON.stringify(rest);
   }
 
-  async function refresh(force = false) {
-    if (document.hidden && !force) return;
-    if (viewMode === 'summary') {
-      try {
-        const res = await doFetch(`/api/summary?range=${encodeURIComponent(summaryRange)}&scope=${encodeURIComponent(summaryScope)}`);
-        const summary = await res.json();
-        const serialized = serializePayload(summary);
-        if (force || serialized !== lastPayload) {
-          lastPayload = serialized;
-          renderSummary(summary);
-        }
-      } catch (err) {
-        disposeCharts();
-        appEl.innerHTML = `${renderTopBar()}<p class="empty">请求出错：${esc(err.message)}</p>`;
-        bindGlobalEvents(activeSidecarConversation());
-      }
-      return;
-    }
+  function setRefreshBtnLoading(loading) {
+    const btn = document.getElementById('btn-refresh');
+    if (!btn) return;
+    btn.classList.toggle('loading', loading);
+    btn.disabled = loading;
+  }
 
+  function resetPollTimer() {
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+    const intervalMs = viewMode === 'summary' ? SUMMARY_POLL_MS : SESSION_POLL_MS;
+    pollTimer = setInterval(() => refresh(false), intervalMs);
+  }
+
+  async function refreshSummary(force, seq) {
+    try {
+      const res = await doFetch(`/api/summary?range=${encodeURIComponent(summaryRange)}&scope=${encodeURIComponent(summaryScope)}`);
+      const summary = await res.json();
+      if (seq !== refreshSeq || viewMode !== 'summary') return;
+      lastSummaryFetchedAt = Date.now();
+      const serialized = serializePayload(summary);
+      if (force || serialized !== lastSummaryPayload) {
+        lastSummaryPayload = serialized;
+        renderSummary(summary);
+      }
+    } catch (err) {
+      if (seq !== refreshSeq || viewMode !== 'summary') return;
+      disposeCharts();
+      appEl.innerHTML = `${renderTopBar()}<p class="empty">请求出错：${esc(err.message)}</p>`;
+      bindGlobalEvents(activeSidecarConversation());
+    }
+  }
+
+  async function refreshSession(force, seq) {
     const cid = selectedConversationId || activeSidecarConversation();
     try {
       const qs = cid ? `?conversationId=${encodeURIComponent(cid)}` : '';
       const metricsRes = await doFetch(`/api/metrics${qs}`);
       const data = await metricsRes.json();
+      if (seq !== refreshSeq || viewMode !== 'session') return;
       const serialized = serializePayload(data);
-      if (force || serialized !== lastPayload) {
-        lastPayload = serialized;
+      if (force || serialized !== lastSessionPayload) {
+        lastSessionPayload = serialized;
         render(data);
       }
     } catch (err) {
+      if (seq !== refreshSeq || viewMode !== 'session') return;
       disposeCharts();
-      appEl.innerHTML = `<p class="empty">请求出错：${esc(err.message)}</p>`;
+      appEl.innerHTML = `${renderTopBar()}<p class="empty">请求出错：${esc(err.message)}</p>`;
+      bindGlobalEvents(activeSidecarConversation());
     }
   }
 
+  async function refresh(force = false) {
+    if (document.hidden && !force) return;
+    const seq = ++refreshSeq;
+    if (force) setRefreshBtnLoading(true);
+    try {
+      if (viewMode === 'summary') {
+        await refreshSummary(force, seq);
+      } else {
+        await refreshSession(force, seq);
+      }
+    } finally {
+      if (seq === refreshSeq) setRefreshBtnLoading(false);
+    }
+  }
+
+  resetPollTimer();
   refresh(true);
-  setInterval(() => refresh(false), POLL_MS);
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) refresh(false);
+    if (document.hidden) return;
+    if (viewMode === 'summary') {
+      if (Date.now() - lastSummaryFetchedAt >= SUMMARY_POLL_MS) {
+        resetPollTimer();
+        refresh(false);
+      }
+    } else {
+      refresh(false);
+    }
   });
 })();
 </script>
