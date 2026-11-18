@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { aggregateGlobalStats, computeToolBreakdown, computeTrajectoryMetrics, parseDurationSec } from '../src/shared/metrics.mjs';
+import { aggregateGlobalStats, computeToolBreakdown, computeTrajectoryMetrics, computeTurnSpeed, parseDurationSec } from '../src/shared/metrics.mjs';
 
 test('parseDurationSec parses s and ms strings', () => {
   assert.equal(parseDurationSec('5.5s'), 5.5);
@@ -78,8 +78,8 @@ test('computeTrajectoryMetrics aggregates usage, cache hit rate, speed, and cont
   assert.equal(m.totals.response, 280);
   assert.equal(m.cache.overallHitRate, 60);
   assert.equal(m.cache.latestHitRate, 90);
-  assert.equal(m.speed.latestTokensPerSec, 200);
-  assert.ok(Math.abs(m.speed.avgTokensPerSec - 280 / 3) < 1e-6);
+  assert.equal(m.speed.latestTokensPerSec, 300);
+  assert.ok(Math.abs(m.speed.avgTokensPerSec - 500 / 3) < 1e-6);
   assert.equal(m.speed.latestTtftSec, 2.0);
   assert.equal(m.speed.avgTtftSec, 3.0);
   assert.equal(m.recentTurns[0].turnIndex, 2);
@@ -163,4 +163,24 @@ test('computeToolBreakdown groups steps by tool category for treemap', () => {
   assert.equal(res.totalTokens, 800);
   assert.equal(res.groups[0].key, 'command');
   assert.equal(res.groups[0].tokens, 500);
+});
+
+test('computeTurnSpeed handles thinking streams, short bursts, and buffered flushes', () => {
+  // Normal streaming turn includes thinking + response tokens
+  const thinkingTurn = computeTurnSpeed(15264, 3.72, 72.34);
+  assert.ok(Math.abs(thinkingTurn.tokensPerSec - 15264 / 72.34) < 1e-6);
+  assert.equal(thinkingTurn.durationSec, 72.34);
+
+  // Short burst (< 0.5s) falls back to end-to-end duration (ttft + streaming)
+  const shortBurst = computeTurnSpeed(85, 4.35, 0.0363633);
+  assert.ok(Math.abs(shortBurst.tokensPerSec - 85 / (4.35 + 0.0363633)) < 1e-6);
+  assert.ok(shortBurst.tokensPerSec < 25);
+
+  // Server-buffered flush (> 1000 tok/s even with >= 0.5s stream) falls back to end-to-end duration
+  const bufferedFlush = computeTurnSpeed(3160, 14.82, 0.7);
+  assert.ok(Math.abs(bufferedFlush.tokensPerSec - 3160 / (14.82 + 0.7)) < 1e-6);
+
+  // Tiny stream without TTFT returns null instead of inflated speed
+  assert.equal(computeTurnSpeed(100, null, 0.02), null);
+  assert.equal(computeTurnSpeed(0, 2.0, 1.0), null);
 });

@@ -24,6 +24,42 @@ function toInt(v) {
   return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : 0;
 }
 
+const MIN_STREAM_SEC = 0.5;
+const MAX_STREAM_TPS = 1000;
+
+/**
+ * Compute effective output generation speed (tokens/sec) and matching duration.
+ * Streaming duration includes thinking + response tokens, but short or server-buffered
+ * turns flush tokens in milliseconds after TTFT; fall back to end-to-end duration then.
+ */
+export function computeTurnSpeed(outputTokens, ttftSec, streamingSec) {
+  const tokens = toInt(outputTokens);
+  if (tokens <= 0) return null;
+
+  const ttft = ttftSec != null && ttftSec > 0 ? ttftSec : 0;
+  const stream = streamingSec != null && streamingSec > 0 ? streamingSec : 0;
+
+  if (stream >= MIN_STREAM_SEC) {
+    const streamRate = tokens / stream;
+    if (streamRate <= MAX_STREAM_TPS) {
+      return { tokens, durationSec: stream, tokensPerSec: streamRate };
+    }
+  }
+
+  if (ttft > 0) {
+    const totalSec = ttft + stream;
+    return { tokens, durationSec: totalSec, tokensPerSec: tokens / totalSec };
+  }
+
+  return null;
+}
+
+function getEffectiveOutputTokens(t) {
+  const out = toInt(t?.outputTokens);
+  if (out > 0) return out;
+  return toInt(t?.thinkingOutputTokens) + toInt(t?.responseOutputTokens);
+}
+
 function estimateTextTokens(text) {
   if (!text) return 0;
   const s = String(text);
@@ -324,14 +360,9 @@ export function computeTrajectoryMetrics(trajectoryResp, catalog = {}) {
 
     const ttftSec = parseDurationSec(cm.timeToFirstToken);
     const streamingSec = parseDurationSec(cm.streamingDuration);
-    // Thinking tokens are generated during TTFT before streamingDuration begins;
-    // using total outputTokens / streamingDuration inflates speed when thinking >> response.
-    const streamTokens = responseOutputTokens > 0
-      ? responseOutputTokens
-      : (thinkingOutputTokens === 0 ? outputTokens : 0);
-    const tokensPerSec = streamingSec && streamTokens > 0
-      ? streamTokens / streamingSec
-      : (ttftSec && outputTokens > 0 ? outputTokens / (ttftSec + (streamingSec || 0)) : null);
+    const effectiveOutput = outputTokens > 0 ? outputTokens : (thinkingOutputTokens + responseOutputTokens);
+    const speedInfo = computeTurnSpeed(effectiveOutput, ttftSec, streamingSec);
+    const tokensPerSec = speedInfo ? speedInfo.tokensPerSec : null;
 
     const modelId = cm.model || usage.model || '';
     const modelName = cm.modelDisplayName || catalog[modelId]?.displayName || cm.responseModel || modelId || 'Unknown';
@@ -421,12 +452,10 @@ export function computeTrajectoryMetrics(trajectoryResp, catalog = {}) {
     totalOutput += t.outputTokens;
     totalThinking += t.thinkingOutputTokens;
     totalResponse += t.responseOutputTokens;
-    if (t.streamingSec && t.responseOutputTokens > 0) {
-      totalStreamingSec += t.streamingSec;
-      totalTimedOutput += t.responseOutputTokens;
-    } else if (t.streamingSec && t.thinkingOutputTokens === 0 && t.outputTokens > 0) {
-      totalStreamingSec += t.streamingSec;
-      totalTimedOutput += t.outputTokens;
+    const speedInfo = computeTurnSpeed(getEffectiveOutputTokens(t), t.ttftSec, t.streamingSec);
+    if (speedInfo) {
+      totalStreamingSec += speedInfo.durationSec;
+      totalTimedOutput += speedInfo.tokens;
     }
     if (t.ttftSec != null) {
       ttftSum += t.ttftSec;
@@ -575,12 +604,10 @@ export function aggregateGlobalStats(items, range = 'today') {
         byBucket.set(bucketInfo.key, b);
       }
 
-      const streamTok = turn.responseOutputTokens > 0
-        ? turn.responseOutputTokens
-        : (turn.thinkingOutputTokens === 0 ? turn.outputTokens : 0);
-      if (turn.streamingSec && streamTok > 0) {
-        streamingSec += turn.streamingSec;
-        timedOutput += streamTok;
+      const speedInfo = computeTurnSpeed(getEffectiveOutputTokens(turn), turn.ttftSec, turn.streamingSec);
+      if (speedInfo) {
+        streamingSec += speedInfo.durationSec;
+        timedOutput += speedInfo.tokens;
       }
       if (turn.ttftSec != null) {
         ttftSum += turn.ttftSec;
