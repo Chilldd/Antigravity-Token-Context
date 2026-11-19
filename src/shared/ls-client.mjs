@@ -4,10 +4,13 @@ import { getLocalGlobalSummary } from './local-store.mjs';
 import { aggregateGlobalStats, computeTrajectoryMetrics } from './metrics.mjs';
 
 const CATALOG_TTL_MS = 10 * 60 * 1000;
+const QUOTA_TTL_MS = 15 * 1000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 let modelCatalog = {};
 let catalogFetchedAt = 0;
+let quotaCache = null;
+let quotaFetchedAt = 0;
 const trajectoryStatsCache = new Map(); // cid -> { mtime, item }
 
 export function lsRequest(method, body = {}) {
@@ -298,4 +301,66 @@ export async function getGlobalSummary(range = 'today', scope = 'workspace') {
     ...stats,
     updatedAt: new Date().toISOString(),
   };
+}
+
+function normalizeQuotaBucket(bucket) {
+  if (!bucket || typeof bucket !== 'object') return null;
+  const raw = Number(bucket.remainingFraction);
+  if (!Number.isFinite(raw)) return null;
+  const clamped = Math.max(0, Math.min(1, raw));
+  return {
+    pct: Math.round(clamped * 100),
+    remainingFraction: clamped,
+    resetTime: typeof bucket.resetTime === 'string' ? bucket.resetTime : '',
+  };
+}
+
+/**
+ * Extract the Gemini Models 5h and weekly quota buckets from RetrieveUserQuotaSummary response.
+ */
+export function extractGeminiQuota(resp) {
+  const groups = resp?.response?.groups || resp?.groups || [];
+  if (!Array.isArray(groups) || groups.length === 0) return null;
+
+  const geminiGroup = groups.find((g) => {
+    const buckets = Array.isArray(g?.buckets) ? g.buckets : [];
+    if (buckets.some((b) => b?.bucketId === 'gemini-5h' || b?.bucketId === 'gemini-weekly')) {
+      return true;
+    }
+    return String(g?.displayName || '').trim().toLowerCase() === 'gemini models';
+  });
+  if (!geminiGroup) return null;
+
+  const buckets = Array.isArray(geminiGroup.buckets) ? geminiGroup.buckets : [];
+  const fiveHourRaw = buckets.find((b) => b?.bucketId === 'gemini-5h' || b?.window === '5h');
+  const weeklyRaw = buckets.find((b) => b?.bucketId === 'gemini-weekly' || b?.window === 'weekly');
+
+  const fiveHour = normalizeQuotaBucket(fiveHourRaw);
+  const weekly = normalizeQuotaBucket(weeklyRaw);
+  if (!fiveHour && !weekly) return null;
+
+  return { fiveHour, weekly };
+}
+
+/**
+ * Fetch and cache the Gemini Models quota summary from the Language Server.
+ */
+export async function getGeminiQuotaSummary({ force = false } = {}) {
+  if (!force && quotaCache && Date.now() - quotaFetchedAt < QUOTA_TTL_MS) {
+    return quotaCache;
+  }
+  try {
+    const resp = await lsRequest('RetrieveUserQuotaSummary', {
+      metadata: { ideName: 'antigravity', extensionName: 'antigravity' },
+    });
+    const parsed = extractGeminiQuota(resp);
+    if (parsed) {
+      quotaCache = parsed;
+      quotaFetchedAt = Date.now();
+    }
+    return parsed || quotaCache;
+  } catch (err) {
+    console.error('[token-monitor] RetrieveUserQuotaSummary failed:', err.message);
+    return null;
+  }
 }

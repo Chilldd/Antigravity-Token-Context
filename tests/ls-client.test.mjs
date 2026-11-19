@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { findSubagentEntries, getLatestMetrics } from '../src/shared/ls-client.mjs';
+import { extractGeminiQuota, findSubagentEntries, getLatestMetrics } from '../src/shared/ls-client.mjs';
 import { getLocalGlobalSummary } from '../src/shared/local-store.mjs';
 
 test('findSubagentEntries discovers child and root-linked subagents', () => {
@@ -117,4 +117,58 @@ test('getLocalGlobalSummary aggregates all conversations and merges subagents in
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('extractGeminiQuota extracts only Gemini Models 5h and weekly quota buckets', () => {
+  const resp = {
+    response: {
+      groups: [
+        {
+          displayName: 'Gemini Models',
+          buckets: [
+            {
+              bucketId: 'gemini-weekly',
+              window: 'weekly',
+              remainingFraction: 0.7524415,
+              resetTime: '2026-11-25T01:23:08Z',
+            },
+            {
+              bucketId: 'gemini-5h',
+              window: '5h',
+              remainingFraction: 0.93806,
+              resetTime: '2026-11-19T11:12:09Z',
+            },
+          ],
+        },
+        {
+          displayName: 'Claude and GPT models',
+          buckets: [
+            { bucketId: '3p-weekly', window: 'weekly', remainingFraction: 1, resetTime: '2026-11-26T06:27:47Z' },
+            { bucketId: '3p-5h', window: '5h', remainingFraction: 1, resetTime: '2026-11-19T11:27:47Z' },
+          ],
+        },
+        {
+          displayName: 'Gemini 4 Argon',
+          buckets: [
+            { bucketId: 'gemini-argon-wtu-weekly', window: 'weekly', remainingFraction: 1, resetTime: '2026-11-26T06:27:47Z' },
+          ],
+        },
+      ],
+    },
+  };
+
+  const quota = extractGeminiQuota(resp);
+  assert.deepEqual(quota, {
+    fiveHour: {
+      pct: 94,
+      remainingFraction: 0.93806,
+      resetTime: '2026-11-19T11:12:09Z',
+    },
+    weekly: {
+      pct: 75,
+      remainingFraction: 0.7524415,
+      resetTime: '2026-11-25T01:23:08Z',
+    },
+  });
+  assert.equal(extractGeminiQuota({ response: { groups: [] } }), null);
 });

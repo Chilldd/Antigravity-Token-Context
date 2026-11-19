@@ -15,7 +15,7 @@ const DISCOVER_MS = 5000;
 /**
  * Start background CDP injection loop. Fails silently when CDP port is not open.
  */
-export function startCdpInjector({ getMetrics, ports = CANDIDATE_PORTS }) {
+export function startCdpInjector({ getMetrics, getQuota, ports = CANDIDATE_PORTS }) {
   const sessions = new Map(); // wsUrl -> { session, conversationId, lastSerialized }
   let discovering = false;
 
@@ -77,9 +77,12 @@ export function startCdpInjector({ getMetrics, ports = CANDIDATE_PORTS }) {
           entry.lastSerialized = '';
         }
 
-        const metrics = entry.conversationId
-          ? await getMetrics(entry.conversationId)
-          : { empty: true, cascadeId: '' };
+        const [metrics, quota] = await Promise.all([
+          entry.conversationId
+            ? getMetrics(entry.conversationId)
+            : Promise.resolve({ empty: true, cascadeId: '' }),
+          getQuota ? getQuota().catch(() => null) : Promise.resolve(null),
+        ]);
         const data = !metrics
           ? { empty: true, cascadeId: entry.conversationId }
           : metrics.error
@@ -97,6 +100,9 @@ export function startCdpInjector({ getMetrics, ports = CANDIDATE_PORTS }) {
                 cache: metrics.cache,
                 speed: metrics.speed,
               };
+        if (quota) {
+          data.quota = quota;
+        }
         const payload = JSON.stringify(data);
         if (payload === entry.lastSerialized) continue;
         entry.lastSerialized = payload;

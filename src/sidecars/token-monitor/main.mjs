@@ -4,7 +4,13 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Response, SidecarApp } from 'sidecar_sdk';
 import { startCdpInjector } from '../../statusline/injector.mjs';
-import { ensureCatalog, getGlobalSummary, getLatestMetrics, listRecentConversations } from '../../shared/ls-client.mjs';
+import {
+  ensureCatalog,
+  getGeminiQuotaSummary,
+  getGlobalSummary,
+  getLatestMetrics,
+  listRecentConversations,
+} from '../../shared/ls-client.mjs';
 import { getDefaultPricingConfig, getPricingConfig, resetPricingConfig, savePricingConfig } from '../../shared/pricing.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -109,7 +115,10 @@ app.api('/api/pricing/reset', async () => {
 
 app.run();
 ensureCatalog();
-const stopInjector = startCdpInjector({ getMetrics: (cid) => getLatestMetrics(cid, { includeSubagents: false, fallbackToLatest: false }) });
+const stopInjector = startCdpInjector({
+  getMetrics: (cid) => getLatestMetrics(cid, { includeSubagents: false, fallbackToLatest: false }),
+  getQuota: getGeminiQuotaSummary,
+});
 
 function shutdown() {
   try { stopInjector(); } catch {}

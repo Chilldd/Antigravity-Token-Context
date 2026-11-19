@@ -1,5 +1,5 @@
 (() => {
-  const SCRIPT_VERSION = '16';
+  const SCRIPT_VERSION = '18';
   if (window.__agyCtxBarVersion === SCRIPT_VERSION) return 'already-bootstrapped';
   window.__agyCtxBarVersion = SCRIPT_VERSION;
   window.__agyCtxBarBootstrapped = true;
@@ -7,18 +7,24 @@
   if (window.__agyCtxObserver) {
     try { window.__agyCtxObserver.disconnect(); } catch {}
   }
-  document.querySelectorAll('#agy-ctx-inline-bar, #agy-ctx-inline-popover, #agy-ctx-inline-style').forEach((el) => el.remove());
+  document.querySelectorAll(
+    '#agy-ctx-inline-bar, #agy-ctx-inline-popover, #agy-quota-inline-bar, #agy-quota-inline-popover, #agy-ctx-inline-style',
+  ).forEach((el) => el.remove());
 
   const BAR_ID = 'agy-ctx-inline-bar';
   const POPOVER_ID = 'agy-ctx-inline-popover';
+  const QUOTA_BAR_ID = 'agy-quota-inline-bar';
+  const QUOTA_POP_ID = 'agy-quota-inline-popover';
   const STYLE_ID = 'agy-ctx-inline-style';
   const CID_RE = /\/c\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
   const metricsByCid = new Map();
   let activeCid = '';
   let lastData = null;
   let lastRenderKey = '';
+  let lastQuotaKey = '';
   let mountScheduled = false;
   let popPinned = false;
+  let quotaPopPinned = false;
   let compactFeedbackTimer = null;
 
   function getCurrentCid() {
@@ -213,12 +219,79 @@
         background: color-mix(in srgb, currentColor 18%, transparent);
         flex: none;
       }
+      #${BAR_ID}.agy-has-quota {
+        margin-right: 0;
+      }
       #${BAR_ID} .agy-ctx-item {
         overflow: hidden;
         text-overflow: ellipsis;
         flex: 0 1 auto;
       }
-      #${POPOVER_ID} {
+      #${QUOTA_BAR_ID} {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        flex: 0 0 auto;
+        height: 22px;
+        margin: 0 auto 0 6px;
+        padding: 0 8px;
+        border-radius: 999px;
+        background: color-mix(in srgb, currentColor 5%, transparent);
+        border: 1px solid color-mix(in srgb, currentColor 11%, transparent);
+        font-size: 11px;
+        line-height: 1;
+        color: var(--muted-foreground, #6e7681);
+        font-variant-numeric: tabular-nums;
+        user-select: none;
+        white-space: nowrap;
+        transition: background-color 0.15s ease, border-color 0.15s ease;
+      }
+      #${QUOTA_BAR_ID}:hover {
+        background: color-mix(in srgb, currentColor 9%, transparent);
+        border-color: color-mix(in srgb, currentColor 20%, transparent);
+      }
+      #${QUOTA_BAR_ID}.agy-pinned {
+        background: color-mix(in srgb, #3b82f6 12%, transparent);
+        border-color: color-mix(in srgb, #3b82f6 45%, transparent);
+      }
+      #${QUOTA_BAR_ID} .agy-quota-btn {
+        appearance: none;
+        background: transparent;
+        border: none;
+        padding: 0;
+        margin: 0;
+        font: inherit;
+        color: inherit;
+        line-height: 1;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        cursor: pointer;
+        border-radius: 999px;
+      }
+      #${QUOTA_BAR_ID} .agy-quota-btn * {
+        cursor: pointer;
+      }
+      #${QUOTA_BAR_ID} .agy-quota-btn:focus-visible {
+        outline: 2px solid #3b82f6;
+        outline-offset: 2px;
+      }
+      #${QUOTA_BAR_ID} .agy-quota-lbl {
+        opacity: 0.78;
+      }
+      #${QUOTA_BAR_ID} .agy-quota-val {
+        color: var(--foreground, inherit);
+        font-weight: 600;
+      }
+      #${QUOTA_BAR_ID} .agy-quota-val.low { color: #fbbf24; }
+      #${QUOTA_BAR_ID}.agy-light .agy-quota-val.low { color: #b45309; }
+      #${QUOTA_BAR_ID} .agy-quota-val.crit { color: #ef4444; }
+      #${QUOTA_BAR_ID}.agy-light .agy-quota-val.crit { color: #dc2626; }
+      #${QUOTA_BAR_ID} .agy-quota-sep {
+        opacity: 0.45;
+      }
+      #${POPOVER_ID},
+      #${QUOTA_POP_ID} {
         position: fixed;
         z-index: 999999;
         width: 272px;
@@ -234,12 +307,18 @@
         transition: opacity 0.26s ease, transform 0.26s cubic-bezier(0.25, 1, 0.5, 1);
         box-sizing: border-box;
       }
-      #${POPOVER_ID}.visible {
+      #${QUOTA_POP_ID} {
+        width: 224px;
+        padding: 10px 11px 9px;
+      }
+      #${POPOVER_ID}.visible,
+      #${QUOTA_POP_ID}.visible {
         opacity: 1;
         transform: translateY(0) scale(1);
         pointer-events: auto;
       }
-      #${POPOVER_ID}.light {
+      #${POPOVER_ID}.light,
+      #${QUOTA_POP_ID}.light {
         background: #ffffff;
         color: #18181b;
         border: 1px solid rgba(15, 23, 42, 0.1);
@@ -249,7 +328,8 @@
         --pop-track: #e4e4e7;
         --pop-line: rgba(15, 23, 42, 0.07);
       }
-      #${POPOVER_ID}.dark {
+      #${POPOVER_ID}.dark,
+      #${QUOTA_POP_ID}.dark {
         background: #1e2024;
         color: #f4f4f5;
         border: 1px solid rgba(255, 255, 255, 0.12);
@@ -338,6 +418,67 @@
       #${POPOVER_ID} .agy-pop-dim {
         color: var(--pop-dim);
       }
+      #${QUOTA_POP_ID} .agy-qpop-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        font-weight: 600;
+        font-size: 12px;
+        margin-bottom: 8px;
+      }
+      #${QUOTA_POP_ID} .agy-qpop-badge {
+        font-size: 10.5px;
+        font-weight: 600;
+        padding: 1px 6px;
+        border-radius: 999px;
+        flex: none;
+      }
+      #${QUOTA_POP_ID} .agy-qpop-item {
+        padding: 7px 8px;
+        border-radius: 8px;
+        background: var(--pop-cell);
+        margin-bottom: 6px;
+      }
+      #${QUOTA_POP_ID} .agy-qpop-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 8px;
+        font-size: 11px;
+      }
+      #${QUOTA_POP_ID} .agy-qpop-name {
+        font-weight: 600;
+      }
+      #${QUOTA_POP_ID} .agy-qpop-pct {
+        font-weight: 700;
+      }
+      #${QUOTA_POP_ID} .agy-qpop-bar {
+        height: 4px;
+        border-radius: 999px;
+        background: var(--pop-track);
+        overflow: hidden;
+        margin: 5px 0 4px;
+      }
+      #${QUOTA_POP_ID} .agy-qpop-bar > div {
+        height: 100%;
+        border-radius: 999px;
+        transition: width 0.55s cubic-bezier(0.25, 1, 0.5, 1);
+      }
+      #${QUOTA_POP_ID} .agy-qpop-reset {
+        font-size: 10px;
+        color: var(--pop-dim);
+      }
+      #${QUOTA_POP_ID} .agy-qpop-foot {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 6px;
+        padding-top: 6px;
+        border-top: 1px solid var(--pop-line);
+        font-size: 10px;
+        color: var(--pop-dim);
+      }
       #${POPOVER_ID} .agy-pop-alert {
         display: flex;
         align-items: center;
@@ -407,15 +548,15 @@
     document.head.appendChild(style);
   }
 
-  function ensurePopover() {
-    let pop = document.getElementById(POPOVER_ID);
+  function ensurePopover(id = POPOVER_ID) {
+    let pop = document.getElementById(id);
     if (pop && pop.dataset.version !== SCRIPT_VERSION) {
       pop.remove();
       pop = null;
     }
     if (!pop) {
       pop = document.createElement('div');
-      pop.id = POPOVER_ID;
+      pop.id = id;
       pop.setAttribute('translate', 'no');
       pop.classList.add('notranslate');
       pop.dataset.version = SCRIPT_VERSION;
@@ -432,6 +573,33 @@
     if (v >= 1e6) return (v / 1e6).toFixed(v % 1e6 === 0 ? 0 : 2) + 'M';
     if (v >= 1e3) return (v / 1e3).toFixed(1) + 'k';
     return String(Math.round(v));
+  }
+
+  function fmtResetRemain(resetTime) {
+    if (!resetTime) return '';
+    const diffMs = Date.parse(resetTime) - Date.now();
+    if (!Number.isFinite(diffMs)) return '';
+    if (diffMs <= 0) return '即将重置';
+    const totalMin = Math.floor(diffMs / 60000);
+    const days = Math.floor(totalMin / (24 * 60));
+    const hours = Math.floor((totalMin % (24 * 60)) / 60);
+    const mins = totalMin % 60;
+    if (days > 0) return `${days}d${hours}h`;
+    if (hours > 0) return `${hours}h${mins}m`;
+    return `${Math.max(1, mins)}m`;
+  }
+
+  function quotaLevelClass(pct) {
+    if (pct <= 5) return 'crit';
+    if (pct <= 20) return 'low';
+    return '';
+  }
+
+  function getQuotaKey(quota) {
+    if (!quota) return '';
+    const h5 = quota.fiveHour ? String(quota.fiveHour.pct) : '';
+    const d7 = quota.weekly ? String(quota.weekly.pct) : '';
+    return `${h5}:${d7}`;
   }
 
   function esc(s) {
@@ -469,6 +637,7 @@
       const buttons = Array.from(card.querySelectorAll('button'));
       const bottomButtons = buttons.filter((b) => {
         if (b.id === BAR_ID || b.closest('#' + BAR_ID)) return false;
+        if (b.id === QUOTA_BAR_ID || b.closest('#' + QUOTA_BAR_ID)) return false;
         const br = b.getBoundingClientRect();
         return br.width > 0 && br.height > 0 && br.top >= inputRect.bottom - 10;
       });
@@ -488,9 +657,8 @@
     return null;
   }
 
-  function positionPopover(bar, pop) {
+  function positionPopover(bar, pop, popWidth = 272) {
     const br = bar.getBoundingClientRect();
-    const popWidth = 272;
     const left = Math.max(8, Math.min(window.innerWidth - popWidth - 8, br.left));
     pop.style.left = left + 'px';
     pop.style.bottom = (window.innerHeight - br.top + 8) + 'px';
@@ -499,9 +667,10 @@
 
   function showPopover(bar) {
     if (!lastData || lastData.empty) return;
-    const pop = ensurePopover();
+    if (!quotaPopPinned) hideQuotaPopover(false);
+    const pop = ensurePopover(POPOVER_ID);
     renderPopover(pop, lastData);
-    positionPopover(bar, pop);
+    positionPopover(bar, pop, 272);
     pop.classList.add('visible');
     const mainBtn = bar.querySelector('.agy-ctx-main');
     if (mainBtn) mainBtn.setAttribute('aria-expanded', 'true');
@@ -518,6 +687,32 @@
       const mainBtn = bar.querySelector('.agy-ctx-main');
       if (mainBtn) mainBtn.setAttribute('aria-expanded', 'false');
       bar.classList.remove('agy-pinned');
+    }
+  }
+
+  function showQuotaPopover(qBar) {
+    const quota = lastData?.quota;
+    if (!quota || (!quota.fiveHour && !quota.weekly)) return;
+    if (!popPinned) hidePopover(false);
+    const pop = ensurePopover(QUOTA_POP_ID);
+    renderQuotaPopover(pop, quota);
+    positionPopover(qBar, pop, 224);
+    pop.classList.add('visible');
+    const btn = qBar.querySelector('.agy-quota-btn');
+    if (btn) btn.setAttribute('aria-expanded', 'true');
+    qBar.classList.toggle('agy-pinned', quotaPopPinned);
+  }
+
+  function hideQuotaPopover(force = false) {
+    if (quotaPopPinned && !force) return;
+    quotaPopPinned = false;
+    const pop = document.getElementById(QUOTA_POP_ID);
+    if (pop) pop.classList.remove('visible');
+    const qBar = document.getElementById(QUOTA_BAR_ID);
+    if (qBar) {
+      const btn = qBar.querySelector('.agy-quota-btn');
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+      qBar.classList.remove('agy-pinned');
     }
   }
 
@@ -618,15 +813,26 @@
     if (window.__agyCtxDocBound === SCRIPT_VERSION) return;
     window.__agyCtxDocBound = SCRIPT_VERSION;
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') hidePopover(true);
+      if (e.key === 'Escape') {
+        hidePopover(true);
+        hideQuotaPopover(true);
+      }
     });
     document.addEventListener('click', (e) => {
-      if (!popPinned) return;
-      const bar = document.getElementById(BAR_ID);
-      const pop = document.getElementById(POPOVER_ID);
-      if (bar && bar.contains(e.target)) return;
-      if (pop && pop.contains(e.target)) return;
-      hidePopover(true);
+      if (popPinned) {
+        const bar = document.getElementById(BAR_ID);
+        const pop = document.getElementById(POPOVER_ID);
+        if (!(bar && bar.contains(e.target)) && !(pop && pop.contains(e.target))) {
+          hidePopover(true);
+        }
+      }
+      if (quotaPopPinned) {
+        const qBar = document.getElementById(QUOTA_BAR_ID);
+        const qPop = document.getElementById(QUOTA_POP_ID);
+        if (!(qBar && qBar.contains(e.target)) && !(qPop && qPop.contains(e.target))) {
+          hideQuotaPopover(true);
+        }
+      }
     });
   }
 
@@ -686,6 +892,125 @@
       row.appendChild(bar);
     }
     return bar;
+  }
+
+  function mountQuotaBar() {
+    ensureStyle();
+    bindDocumentDismiss();
+    const existing = document.getElementById(QUOTA_BAR_ID);
+    if (existing && existing.dataset.version === SCRIPT_VERSION && existing.isConnected) {
+      return existing;
+    }
+    const found = findBottomToolbar();
+    if (!found) return null;
+    const { row } = found;
+    if (existing) existing.remove();
+
+    const qBar = document.createElement('div');
+    qBar.id = QUOTA_BAR_ID;
+    qBar.dataset.version = SCRIPT_VERSION;
+    qBar.classList.toggle('agy-light', isLightSurface());
+    qBar.style.display = 'none';
+    qBar.innerHTML = '<button type="button" class="agy-quota-btn" aria-expanded="false" aria-label="Gemini 剩余额度"></button>';
+
+    const btn = qBar.querySelector('.agy-quota-btn');
+    btn.addEventListener('mouseenter', () => showQuotaPopover(qBar));
+    btn.addEventListener('focus', () => showQuotaPopover(qBar));
+    qBar.addEventListener('mouseleave', () => {
+      setTimeout(() => {
+        const pop = document.getElementById(QUOTA_POP_ID);
+        if (pop && pop.matches(':hover')) return;
+        hideQuotaPopover(false);
+      }, 90);
+    });
+    btn.addEventListener('blur', () => {
+      setTimeout(() => {
+        const pop = document.getElementById(QUOTA_POP_ID);
+        if (pop && pop.contains(document.activeElement)) return;
+        if (qBar.contains(document.activeElement)) return;
+        hideQuotaPopover(false);
+      }, 90);
+    });
+    btn.addEventListener('click', () => {
+      const quota = lastData?.quota;
+      if (!quota || (!quota.fiveHour && !quota.weekly)) return;
+      quotaPopPinned = !quotaPopPinned;
+      if (quotaPopPinned) showQuotaPopover(qBar);
+      else hideQuotaPopover(true);
+    });
+
+    const ctxBar = document.getElementById(BAR_ID);
+    if (ctxBar && ctxBar.parentElement === row) {
+      ctxBar.insertAdjacentElement('afterend', qBar);
+    } else {
+      const children = Array.from(row.children);
+      if (children.length >= 2) row.insertBefore(qBar, children[children.length - 1]);
+      else row.appendChild(qBar);
+    }
+    return qBar;
+  }
+
+  function renderQuotaPopover(pop, quota) {
+    const light = isLightSurface();
+    const fiveHour = quota?.fiveHour;
+    const weekly = quota?.weekly;
+    const minPct = Math.min(
+      fiveHour ? fiveHour.pct : 100,
+      weekly ? weekly.pct : 100,
+    );
+    const statusText = minPct <= 5 ? '紧张' : (minPct <= 20 ? '偏低' : '充裕');
+    const badgeColor = minPct <= 5
+      ? (light ? '#dc2626' : '#ef4444')
+      : minPct <= 20
+        ? (light ? '#b45309' : '#fbbf24')
+        : (light ? '#15803d' : '#4ade80');
+    const badgeBg = minPct <= 5
+      ? (light ? '#fef2f2' : 'rgba(239,68,68,0.16)')
+      : minPct <= 20
+        ? (light ? '#fffbeb' : 'rgba(245,158,11,0.16)')
+        : (light ? '#f0fdf4' : 'rgba(74,222,128,0.15)');
+
+    const renderBucket = (label, bucket) => {
+      if (!bucket) return '';
+      const pct = Math.max(0, Math.min(100, Number(bucket.pct) || 0));
+      const barColor = pct <= 5
+        ? (light ? '#dc2626' : '#ef4444')
+        : pct <= 20
+          ? (light ? '#b45309' : '#fbbf24')
+          : (light ? '#16a34a' : '#22c55e');
+      const reset = fmtResetRemain(bucket.resetTime);
+      return `
+        <div class="agy-qpop-item">
+          <div class="agy-qpop-row">
+            <span class="agy-qpop-name">${label}</span>
+            <span class="agy-qpop-pct" style="color:${barColor}">${pct}%</span>
+          </div>
+          <div class="agy-qpop-bar"><div style="width:${pct}%;background:${barColor}"></div></div>
+          <div class="agy-qpop-reset">${reset ? `${reset} 后重置` : '重置时间未知'}</div>
+        </div>
+      `;
+    };
+
+    pop.innerHTML = `
+      <div class="agy-qpop-head">
+        <span>Gemini 额度</span>
+        <span class="agy-qpop-badge" style="color:${badgeColor};background:${badgeBg}">${statusText}</span>
+      </div>
+      ${renderBucket('5 小时额度', fiveHour)}
+      ${renderBucket('7 天额度', weekly)}
+      <div class="agy-qpop-foot">
+        <span>Gemini Models</span>
+        <span>${quotaPopPinned ? '已固定' : '点击固定'}</span>
+      </div>
+    `;
+
+    pop.onmouseleave = () => {
+      setTimeout(() => {
+        const qBar = document.getElementById(QUOTA_BAR_ID);
+        if (qBar && qBar.matches(':hover')) return;
+        hideQuotaPopover(false);
+      }, 90);
+    };
   }
 
   function renderPopover(pop, data) {
@@ -817,9 +1142,58 @@
     `;
   }
 
+  function renderQuotaBar(quota) {
+    const qBar = mountQuotaBar();
+    const ctxBar = document.getElementById(BAR_ID);
+    const fiveHour = quota?.fiveHour;
+    const weekly = quota?.weekly;
+    const hasQuota = Boolean(fiveHour || weekly);
+
+    if (ctxBar) ctxBar.classList.toggle('agy-has-quota', hasQuota && Boolean(qBar));
+    if (!qBar) return;
+
+    qBar.classList.toggle('agy-light', isLightSurface());
+    if (!hasQuota) {
+      lastQuotaKey = '';
+      qBar.style.display = 'none';
+      hideQuotaPopover(true);
+      return;
+    }
+
+    const qKey = getQuotaKey(quota);
+    qBar.style.display = '';
+    if (qKey !== lastQuotaKey) {
+      lastQuotaKey = qKey;
+      const parts = [];
+      const ariaParts = [];
+      if (fiveHour) {
+        const cls = quotaLevelClass(fiveHour.pct);
+        parts.push(`<span class="agy-quota-lbl">5h</span><span class="agy-quota-val ${cls}">${fiveHour.pct}%</span>`);
+        ariaParts.push(`5小时 ${fiveHour.pct}%`);
+      }
+      if (weekly) {
+        const cls = quotaLevelClass(weekly.pct);
+        parts.push(`<span class="agy-quota-lbl">7d</span><span class="agy-quota-val ${cls}">${weekly.pct}%</span>`);
+        ariaParts.push(`7天 ${weekly.pct}%`);
+      }
+      const btn = qBar.querySelector('.agy-quota-btn');
+      if (btn) {
+        btn.innerHTML = parts.join('<span class="agy-quota-sep">·</span>');
+        btn.setAttribute('aria-label', `Gemini 剩余额度：${ariaParts.join('，')}，点击展开或固定详情`);
+      }
+    }
+
+    const qPop = document.getElementById(QUOTA_POP_ID);
+    if (qPop && qPop.classList.contains('visible')) {
+      renderQuotaPopover(qPop, quota);
+      positionPopover(qBar, qPop, 224);
+    }
+  }
+
   function renderData(data) {
     lastData = data;
     const bar = mountBar();
+    renderQuotaBar(data?.quota);
     if (!bar || !data) return;
 
     bar.classList.toggle('agy-light', isLightSurface());
@@ -856,7 +1230,7 @@
       const pop = document.getElementById(POPOVER_ID);
       if (pop && pop.classList.contains('visible')) {
         renderPopover(pop, data);
-        positionPopover(bar, pop);
+        positionPopover(bar, pop, 272);
       }
       return;
     }
@@ -941,7 +1315,7 @@
     const pop = document.getElementById(POPOVER_ID);
     if (pop && pop.classList.contains('visible')) {
       renderPopover(pop, data);
-      positionPopover(bar, pop);
+      positionPopover(bar, pop, 272);
     }
   }
 
@@ -965,7 +1339,9 @@
     if (nextCid === activeCid) return;
     activeCid = nextCid;
     const cached = nextCid ? metricsByCid.get(nextCid) : null;
-    renderData(cached || { empty: true, cascadeId: nextCid });
+    const fallback = { empty: true, cascadeId: nextCid };
+    if (lastData?.quota) fallback.quota = lastData.quota;
+    renderData(cached || fallback);
   }
 
   const origPushState = history.pushState.bind(history);
@@ -991,9 +1367,15 @@
     requestAnimationFrame(() => {
       mountScheduled = false;
       const existing = document.getElementById(BAR_ID);
-      if (!existing || !existing.isConnected) {
-        if (lastData) renderData(lastData);
-        else mountBar();
+      const qExisting = document.getElementById(QUOTA_BAR_ID);
+      if (!existing || !existing.isConnected || !qExisting || !qExisting.isConnected) {
+        if (lastData) {
+          lastQuotaKey = '';
+          renderData(lastData);
+        } else {
+          mountBar();
+          mountQuotaBar();
+        }
       }
     });
   });
