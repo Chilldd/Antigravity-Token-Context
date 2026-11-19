@@ -4,8 +4,8 @@ import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { extractGeminiQuota, findSubagentEntries, getLatestMetrics } from '../src/shared/ls-client.mjs';
-import { getLocalGlobalSummary } from '../src/shared/local-store.mjs';
+import { extractGeminiQuota, extractSubagentsFromTrajectory, findSubagentEntries, getLatestMetrics } from '../src/shared/ls-client.mjs';
+import { findLocalSubagentIds, getLocalGlobalSummary } from '../src/shared/local-store.mjs';
 
 test('findSubagentEntries discovers child and root-linked subagents', () => {
   const summaries = {
@@ -210,4 +210,69 @@ test('extractGeminiQuota extracts only Gemini Models 5h and weekly quota buckets
     },
   });
   assert.equal(extractGeminiQuota({ response: { groups: [] } }), null);
+});
+
+test('extractSubagentsFromTrajectory extracts invoked subagents from steps', () => {
+  const trajectoryResp = {
+    trajectory: {
+      steps: [
+        {
+          type: 'CORTEX_STEP_TYPE_INVOKE_SUBAGENT',
+          status: 'CORTEX_STEP_STATUS_DONE',
+          metadata: { completedAt: '2026-11-18T08:28:00Z' },
+          invokeSubagent: {
+            subagents: [{ typeName: 'self', role: 'Design Review Assessor' }],
+            results: [{ conversationId: 'sub-1' }],
+          },
+        },
+        {
+          type: 'CORTEX_STEP_TYPE_INVOKE_SUBAGENT',
+          status: 'CORTEX_STEP_STATUS_RUNNING',
+          metadata: { createdAt: '2026-11-18T08:29:00Z' },
+          invokeSubagent: {
+            subagents: [{ typeName: 'worker', role: 'Swarm Worker (ui)' }],
+            results: [{ conversationId: 'sub-2' }],
+          },
+        },
+      ],
+    },
+  };
+
+  const subs = extractSubagentsFromTrajectory(trajectoryResp, 'root-1');
+  assert.equal(subs.length, 2);
+  assert.equal(subs[0].id, 'sub-2');
+  assert.equal(subs[0].isSwarm, true);
+  assert.equal(subs[0].status, 'CASCADE_RUN_STATUS_RUNNING');
+  assert.equal(subs[1].id, 'sub-1');
+  assert.equal(subs[1].isSwarm, false);
+  assert.equal(subs[1].role, 'Design Review Assessor');
+});
+
+test('findLocalSubagentIds discovers direct and nested descendants from sqlite', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agy-ctx-sub-'));
+  try {
+    const summaryDb = new DatabaseSync(join(dir, 'conversation_summaries.db'));
+    summaryDb.exec(`
+      CREATE TABLE conversation_summaries (
+        conversation_id text PRIMARY KEY,
+        title text,
+        last_modified_time datetime,
+        parent_conversation_id text
+      );
+      CREATE TABLE conversation_parents (
+        conversation_id text PRIMARY KEY,
+        parent_id text
+      );
+    `);
+    summaryDb.prepare('INSERT INTO conversation_summaries VALUES (?, ?, ?, ?)').run('root-1', 'Root', '2026-11-18 10:00:00+00:00', '');
+    summaryDb.prepare('INSERT INTO conversation_summaries VALUES (?, ?, ?, ?)').run('child-1', 'Child', '2026-11-18 10:01:00+00:00', 'root-1');
+    summaryDb.prepare('INSERT INTO conversation_summaries VALUES (?, ?, ?, ?)').run('grandchild-1', 'Grandchild', '2026-11-18 10:02:00+00:00', 'child-1');
+    summaryDb.prepare('INSERT INTO conversation_summaries VALUES (?, ?, ?, ?)').run('other-1', 'Other', '2026-11-18 10:03:00+00:00', '');
+    summaryDb.close();
+
+    const subs = findLocalSubagentIds('root-1', dir);
+    assert.deepEqual(subs.map((s) => s.id), ['grandchild-1', 'child-1']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

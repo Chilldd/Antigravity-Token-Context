@@ -1,6 +1,6 @@
 import http from 'node:http';
 import https from 'node:https';
-import { getLocalGlobalSummary } from './local-store.mjs';
+import { findLocalSubagentIds, getLocalGlobalSummary } from './local-store.mjs';
 import { aggregateGlobalStats, computeTrajectoryMetrics } from './metrics.mjs';
 
 const CATALOG_TTL_MS = 10 * 60 * 1000;
@@ -90,6 +90,21 @@ export async function ensureCatalog() {
   return modelCatalog;
 }
 
+function buildSubagentMeta(spec = {}, agentScript = {}, fallbackLabel = '', nestingDepth = 1) {
+  const scriptName = agentScript?.name || '';
+  const typeName = String(spec?.typeName || '').trim();
+  const typeLower = typeName.toLowerCase();
+  const role = spec?.role || scriptName || typeName || fallbackLabel;
+  const isSwarm = typeLower === 'worker' || (!typeLower && /^swarm\b/i.test(String(spec?.role || '')));
+  return {
+    role,
+    scriptName,
+    typeName,
+    isSwarm,
+    nestingDepth: Number(nestingDepth) || 1,
+  };
+}
+
 export function findSubagentEntries(summaries, parentOrRootId) {
   if (!summaries || !parentOrRootId) return [];
   const results = [];
@@ -97,25 +112,46 @@ export function findSubagentEntries(summaries, parentOrRootId) {
     if (id === parentOrRootId) continue;
     const meta = info?.trajectoryMetadata || {};
     if (meta.rootConversationId === parentOrRootId || meta.parentConversationId === parentOrRootId) {
-      const spec = meta.subagentSpec || {};
-      const scriptName = meta.agentScript?.name || '';
-      const typeName = String(spec.typeName || '').trim().toLowerCase();
-      const role = spec.role || scriptName || spec.typeName || info?.summary || id.slice(0, 8);
-      const isSwarm = typeName === 'worker' || (!typeName && /^swarm\b/i.test(String(spec.role || '')));
+      const parsed = buildSubagentMeta(meta.subagentSpec, meta.agentScript, info?.summary || id.slice(0, 8), meta.nestingDepth);
       results.push({
         id,
-        role,
-        scriptName,
-        typeName: spec.typeName || '',
-        isSwarm,
+        ...parsed,
         status: info?.status || '',
         killed: Boolean(info?.killed),
-        nestingDepth: Number(meta.nestingDepth) || 1,
         lastModifiedTime: info?.lastModifiedTime || '',
       });
     }
   }
   return results.sort((a, b) => (b.lastModifiedTime || '').localeCompare(a.lastModifiedTime || ''));
+}
+
+export function extractSubagentsFromTrajectory(trajectoryResp, parentOrRootId) {
+  const steps = trajectoryResp?.trajectory?.steps;
+  if (!Array.isArray(steps) || steps.length === 0) return [];
+  const byId = new Map();
+  for (const step of steps) {
+    const inv = step?.invokeSubagent;
+    if (!inv || !Array.isArray(inv.results)) continue;
+    const specs = Array.isArray(inv.subagents) ? inv.subagents : [];
+    const lastModifiedTime = step?.metadata?.completedAt || step?.metadata?.createdAt || '';
+    const status = step?.status === 'CORTEX_STEP_STATUS_RUNNING'
+      ? 'CASCADE_RUN_STATUS_RUNNING'
+      : (step?.status === 'CORTEX_STEP_STATUS_DONE' ? 'CASCADE_RUN_STATUS_IDLE' : '');
+    for (let i = 0; i < inv.results.length; i += 1) {
+      const id = inv.results[i]?.conversationId;
+      if (!id || id === parentOrRootId) continue;
+      const spec = specs[i] || specs[0] || {};
+      const parsed = buildSubagentMeta(spec, null, id.slice(0, 8), 1);
+      byId.set(id, {
+        id,
+        ...parsed,
+        status,
+        killed: false,
+        lastModifiedTime,
+      });
+    }
+  }
+  return Array.from(byId.values()).sort((a, b) => (b.lastModifiedTime || '').localeCompare(a.lastModifiedTime || ''));
 }
 
 export async function listRecentConversations(limit = 30) {
@@ -157,47 +193,79 @@ export async function getLatestMetrics(conversationId = '', { includeSubagents =
     cid = entries[0][0];
   }
 
-  const subagentEntries = includeSubagents ? findSubagentEntries(summaries, cid).slice(0, 20) : [];
-
-  const [catalog, trajectoryResp, subagentMetrics] = await Promise.all([
+  const [catalog, trajectoryResp] = await Promise.all([
     ensureCatalog(),
     lsRequest('GetCascadeTrajectory', { cascadeId: cid }),
-    Promise.all(
-      subagentEntries.map(async (sub) => {
-        try {
-          const subTraj = await lsRequest('GetCascadeTrajectory', { cascadeId: sub.id });
-          const m = computeTrajectoryMetrics(subTraj, modelCatalog);
-          return {
-            id: sub.id,
-            role: sub.role,
-            scriptName: sub.scriptName,
-            typeName: sub.typeName,
-            isSwarm: sub.isSwarm,
-            status: sub.status || m.status,
-            killed: sub.killed,
-            nestingDepth: sub.nestingDepth,
-            modelName: m.modelName,
-            turnCount: m.turnCount,
-            context: m.context,
-            totals: m.totals,
-            cache: m.cache,
-            speed: m.speed,
-            cost: m.cost,
-          };
-        } catch {
-          return {
-            id: sub.id,
-            role: sub.role,
-            typeName: sub.typeName,
-            status: sub.status,
-            killed: sub.killed,
-            nestingDepth: sub.nestingDepth,
-            error: true,
-          };
-        }
-      }),
-    ),
   ]);
+
+  let subagentEntries = [];
+  if (includeSubagents) {
+    const merged = new Map();
+    for (const item of findSubagentEntries(summaries, cid)) {
+      merged.set(item.id, item);
+    }
+    for (const item of extractSubagentsFromTrajectory(trajectoryResp, cid)) {
+      if (!merged.has(item.id)) merged.set(item.id, item);
+    }
+    for (const item of findLocalSubagentIds(cid)) {
+      if (!merged.has(item.id)) {
+        merged.set(item.id, {
+          id: item.id,
+          role: item.role,
+          scriptName: '',
+          typeName: '',
+          isSwarm: false,
+          status: '',
+          killed: false,
+          nestingDepth: 1,
+          lastModifiedTime: item.lastModifiedTime,
+        });
+      }
+    }
+    subagentEntries = Array.from(merged.values())
+      .sort((a, b) => (b.lastModifiedTime || '').localeCompare(a.lastModifiedTime || ''))
+      .slice(0, 20);
+  }
+
+  const subagentMetrics = await Promise.all(
+    subagentEntries.map(async (sub) => {
+      try {
+        const subTraj = await lsRequest('GetCascadeTrajectory', { cascadeId: sub.id });
+        const m = computeTrajectoryMetrics(subTraj, catalog);
+        const subMeta = subTraj?.trajectory?.metadata || {};
+        const parsed = subMeta.subagentSpec || subMeta.agentScript
+          ? buildSubagentMeta(subMeta.subagentSpec, subMeta.agentScript, sub.role, subMeta.nestingDepth ?? sub.nestingDepth)
+          : null;
+        return {
+          id: sub.id,
+          role: parsed?.role || sub.role,
+          scriptName: parsed?.scriptName || sub.scriptName,
+          typeName: parsed?.typeName || sub.typeName,
+          isSwarm: parsed ? parsed.isSwarm : sub.isSwarm,
+          status: sub.status || m.status,
+          killed: sub.killed,
+          nestingDepth: parsed?.nestingDepth || sub.nestingDepth,
+          modelName: m.modelName,
+          turnCount: m.turnCount,
+          context: m.context,
+          totals: m.totals,
+          cache: m.cache,
+          speed: m.speed,
+          cost: m.cost,
+        };
+      } catch {
+        return {
+          id: sub.id,
+          role: sub.role,
+          typeName: sub.typeName,
+          status: sub.status,
+          killed: sub.killed,
+          nestingDepth: sub.nestingDepth,
+          error: true,
+        };
+      }
+    }),
+  );
 
   const metrics = computeTrajectoryMetrics(trajectoryResp, catalog);
   const summaryMeta = summaries[cid]?.trajectoryMetadata || {};

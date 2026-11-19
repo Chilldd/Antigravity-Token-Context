@@ -289,13 +289,10 @@ function resolveRootConversationId(cid, parentMap) {
   return cur;
 }
 
-/**
- * Aggregate global token usage across ALL workspaces by reading Antigravity's local SQLite databases.
- */
-export function getLocalGlobalSummary(range = 'today', cutoffMs = 0, catalog = {}, appDataDir = resolveAppDataDir()) {
+function readSummaryIndex(appDataDir = resolveAppDataDir()) {
   const summaryDbPath = join(appDataDir, 'conversation_summaries.db');
   if (!existsSync(summaryDbPath)) {
-    throw new Error('未找到本地全局索引数据库 conversation_summaries.db');
+    return null;
   }
 
   let summaryDb;
@@ -327,6 +324,73 @@ export function getLocalGlobalSummary(range = 'today', cutoffMs = 0, catalog = {
       parentMap.set(r.conversation_id, r.parent_conversation_id);
     }
   }
+
+  return { rows, parentMap };
+}
+
+/**
+ * Find all descendant subagent conversation IDs for a parent/root conversation from local SQLite index.
+ */
+export function findLocalSubagentIds(parentOrRootId, appDataDir = resolveAppDataDir()) {
+  if (!parentOrRootId) return [];
+  let index;
+  try {
+    index = readSummaryIndex(appDataDir);
+  } catch {
+    return [];
+  }
+  if (!index) return [];
+
+  const { rows, parentMap } = index;
+  const rowMap = new Map();
+  for (const r of rows) {
+    if (r.conversation_id) rowMap.set(r.conversation_id, r);
+  }
+
+  const childrenMap = new Map();
+  for (const [cid, pid] of parentMap.entries()) {
+    if (!pid || cid === pid) continue;
+    let list = childrenMap.get(pid);
+    if (!list) {
+      list = [];
+      childrenMap.set(pid, list);
+    }
+    list.push(cid);
+  }
+
+  const visited = new Set([parentOrRootId]);
+  const queue = [parentOrRootId];
+  const results = [];
+
+  while (queue.length > 0) {
+    const cur = queue.shift();
+    const children = childrenMap.get(cur) || [];
+    for (const childId of children) {
+      if (visited.has(childId)) continue;
+      visited.add(childId);
+      queue.push(childId);
+      const row = rowMap.get(childId);
+      const ts = parseSqliteTimestampMs(row?.last_modified_time);
+      results.push({
+        id: childId,
+        role: row?.title || childId.slice(0, 8),
+        lastModifiedTime: ts > 0 ? new Date(ts).toISOString() : '',
+      });
+    }
+  }
+
+  return results.sort((a, b) => (b.lastModifiedTime || '').localeCompare(a.lastModifiedTime || ''));
+}
+
+/**
+ * Aggregate global token usage across ALL workspaces by reading Antigravity's local SQLite databases.
+ */
+export function getLocalGlobalSummary(range = 'today', cutoffMs = 0, catalog = {}, appDataDir = resolveAppDataDir()) {
+  const index = readSummaryIndex(appDataDir);
+  if (!index) {
+    throw new Error('未找到本地全局索引数据库 conversation_summaries.db');
+  }
+  const { rows, parentMap } = index;
 
   const candidates = [];
   for (const r of rows) {
