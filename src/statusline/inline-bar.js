@@ -1,5 +1,5 @@
 (() => {
-  const SCRIPT_VERSION = '19';
+  const SCRIPT_VERSION = '20';
   if (window.__agyCtxBarVersion === SCRIPT_VERSION) return 'already-bootstrapped';
   window.__agyCtxBarVersion = SCRIPT_VERSION;
   window.__agyCtxBarBootstrapped = true;
@@ -131,13 +131,10 @@
         border-radius: 999px;
         transition: transform 0.1s ease;
       }
-      #${BAR_ID} .agy-ctx-main:active,
-      #${BAR_ID} .agy-ctx-alert:active {
+      #${BAR_ID} .agy-ctx-main:active {
         transform: scale(0.97);
       }
-      #${BAR_ID} .agy-ctx-main *,
-      #${BAR_ID} .agy-ctx-alert,
-      #${BAR_ID} .agy-ctx-alert * {
+      #${BAR_ID} .agy-ctx-main * {
         cursor: pointer;
       }
       #${BAR_ID}:hover {
@@ -148,8 +145,7 @@
         background: var(--bar-accent-bg);
         border-color: var(--bar-accent-border);
       }
-      #${BAR_ID} .agy-ctx-main:focus-visible,
-      #${BAR_ID} .agy-ctx-alert:focus-visible {
+      #${BAR_ID} .agy-ctx-main:focus-visible {
         outline: 2px solid var(--bar-accent);
         outline-offset: 2px;
       }
@@ -183,7 +179,6 @@
       @media (prefers-reduced-motion: reduce) {
         #${BAR_ID},
         #${BAR_ID} .agy-ctx-main,
-        #${BAR_ID} .agy-ctx-alert,
         #${BAR_ID} svg.agy-ring circle:nth-child(2),
         #${POPOVER_ID},
         #${POPOVER_ID} .agy-pop-bar > div,
@@ -191,35 +186,12 @@
         #${QUOTA_POP_ID} .agy-qpop-bar > div {
           transition: none;
         }
-        #${BAR_ID} .agy-ctx-main:active,
-        #${BAR_ID} .agy-ctx-alert:active {
+        #${BAR_ID} .agy-ctx-main:active {
           transform: none;
         }
         #${BAR_ID}.agy-crit {
           animation: none;
         }
-      }
-      #${BAR_ID} .agy-ctx-alert {
-        appearance: none;
-        border: none;
-        margin: 0;
-        font-family: inherit;
-        font-size: 10px;
-        font-weight: 600;
-        padding: 1px 6px;
-        border-radius: 999px;
-        background: var(--bar-warn-fg);
-        color: #18181b;
-        line-height: 1.25;
-        flex: none;
-      }
-      #${BAR_ID}.agy-warn.agy-light .agy-ctx-alert {
-        background: var(--bar-warn-fg);
-        color: #ffffff;
-      }
-      #${BAR_ID}.agy-crit .agy-ctx-alert {
-        background: var(--bar-danger);
-        color: #ffffff;
       }
       #${BAR_ID}.agy-warn .agy-ctx-strong { color: var(--bar-warn-fg); }
       #${BAR_ID}.agy-crit .agy-ctx-strong { color: var(--bar-danger-fg); }
@@ -954,7 +926,6 @@
     ensureBarStructure(bar);
 
     const mainBtn = bar.querySelector('.agy-ctx-main');
-    const alertBtn = bar.querySelector('.agy-ctx-alert');
 
     mainBtn.addEventListener('mouseenter', () => showPopover(bar));
     mainBtn.addEventListener('focus', () => showPopover(bar));
@@ -982,10 +953,6 @@
       } else {
         hidePopover(true);
       }
-    });
-    alertBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      insertCompactCommand(alertBtn);
     });
 
     const children = Array.from(row.children);
@@ -1227,7 +1194,6 @@
         <span class="agy-ctx-div agy-ctx-hide-sm" data-slot="div2"></span>
         <span class="agy-ctx-item agy-ctx-hide-sm" data-slot="total">0 tok</span>
       </button>
-      <button type="button" class="agy-ctx-alert" data-slot="alert" title="点击填入 /compact" style="display:none"></button>
     `;
   }
 
@@ -1310,7 +1276,6 @@
         if (track) track.setAttribute('stroke-dasharray', '2 2');
         if (prog) prog.style.display = 'none';
         bar.querySelector('[data-slot="pct"]').textContent = '--%';
-        bar.querySelector('[data-slot="alert"]').style.display = 'none';
         bar.querySelector('[data-slot="speed"]').textContent = '连接异常';
         bar.querySelector('[data-slot="div2"]').style.display = 'none';
         bar.querySelector('[data-slot="total"]').style.display = 'none';
@@ -1343,7 +1308,6 @@
       }
       if (mainBtn) mainBtn.setAttribute('aria-label', '上下文与 Token 状态：暂无对话数据');
       bar.querySelector('[data-slot="pct"]').textContent = '0%';
-      bar.querySelector('[data-slot="alert"]').style.display = 'none';
       bar.querySelector('[data-slot="speed"]').textContent = '待命中';
       bar.querySelector('[data-slot="div2"]').style.display = '';
       const totalEl = bar.querySelector('[data-slot="total"]');
@@ -1361,9 +1325,8 @@
     const pctRounded = pct.toFixed(0);
     const tokSpeed = speed.latestTokensPerSec != null ? speed.latestTokensPerSec.toFixed(0) + ' tok/s' : '-';
     const totalTok = fmtTok(totals.all);
-    const alertText = pct >= 90 ? '快满 · /compact' : (pct >= 75 ? '建议 /compact' : '');
 
-    renderKey = `ok:${pctRounded}|${tokSpeed}|${totalTok}|${alertText}`;
+    renderKey = `ok:${pctRounded}|${tokSpeed}|${totalTok}`;
     if (renderKey !== lastRenderKey || bar.dataset.built !== '1') {
       lastRenderKey = renderKey;
       ensureBarStructure(bar);
@@ -1380,18 +1343,6 @@
       }
 
       bar.querySelector('[data-slot="pct"]').textContent = `${pctRounded}%`;
-      const alertEl = bar.querySelector('[data-slot="alert"]');
-      if (alertText) {
-        alertEl.style.display = '';
-        if (!alertEl.dataset.origText) {
-          alertEl.textContent = alertText;
-        } else {
-          alertEl.dataset.origText = alertText;
-        }
-      } else {
-        alertEl.style.display = 'none';
-        delete alertEl.dataset.origText;
-      }
       bar.querySelector('[data-slot="speed"]').textContent = tokSpeed;
       bar.querySelector('[data-slot="div2"]').style.display = '';
       const totalEl = bar.querySelector('[data-slot="total"]');
