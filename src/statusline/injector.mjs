@@ -75,14 +75,21 @@ export function startCdpInjector({ getMetrics, getQuota, ports = CANDIDATE_PORTS
         if (liveCid !== entry.conversationId) {
           entry.conversationId = liveCid;
           entry.lastSerialized = '';
+          entry.lastUsageSig = '';
         }
 
-        const [metrics, quota] = await Promise.all([
-          entry.conversationId
-            ? getMetrics(entry.conversationId)
-            : Promise.resolve({ empty: true, cascadeId: '' }),
-          getQuota ? getQuota().catch(() => null) : Promise.resolve(null),
-        ]);
+        const metrics = entry.conversationId
+          ? await getMetrics(entry.conversationId)
+          : { empty: true, cascadeId: '' };
+        const usageSig = metrics && !metrics.error && !metrics.empty
+          ? `${metrics.turnCount ?? 0}:${metrics.totals?.all ?? 0}`
+          : '';
+        const usageChanged = Boolean(usageSig && entry.lastUsageSig && usageSig !== entry.lastUsageSig);
+        if (usageSig) entry.lastUsageSig = usageSig;
+
+        const quota = getQuota
+          ? await getQuota({ force: usageChanged }).catch(() => null)
+          : null;
         const data = !metrics
           ? { empty: true, cascadeId: entry.conversationId }
           : metrics.error

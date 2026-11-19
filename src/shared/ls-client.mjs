@@ -4,13 +4,15 @@ import { getLocalGlobalSummary } from './local-store.mjs';
 import { aggregateGlobalStats, computeTrajectoryMetrics } from './metrics.mjs';
 
 const CATALOG_TTL_MS = 10 * 60 * 1000;
-const QUOTA_TTL_MS = 15 * 1000;
+const QUOTA_TTL_MS = 3 * 1000;
+const QUOTA_MIN_FORCE_MS = 800;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 let modelCatalog = {};
 let catalogFetchedAt = 0;
 let quotaCache = null;
 let quotaFetchedAt = 0;
+let quotaInFlight = null;
 const trajectoryStatsCache = new Map(); // cid -> { mtime, item }
 
 export function lsRequest(method, body = {}) {
@@ -346,21 +348,30 @@ export function extractGeminiQuota(resp) {
  * Fetch and cache the Gemini Models quota summary from the Language Server.
  */
 export async function getGeminiQuotaSummary({ force = false } = {}) {
-  if (!force && quotaCache && Date.now() - quotaFetchedAt < QUOTA_TTL_MS) {
+  const age = Date.now() - quotaFetchedAt;
+  if (quotaCache && ((!force && age < QUOTA_TTL_MS) || (force && age < QUOTA_MIN_FORCE_MS))) {
     return quotaCache;
   }
-  try {
-    const resp = await lsRequest('RetrieveUserQuotaSummary', {
-      metadata: { ideName: 'antigravity', extensionName: 'antigravity' },
-    });
-    const parsed = extractGeminiQuota(resp);
-    if (parsed) {
-      quotaCache = parsed;
-      quotaFetchedAt = Date.now();
-    }
-    return parsed || quotaCache;
-  } catch (err) {
-    console.error('[token-monitor] RetrieveUserQuotaSummary failed:', err.message);
-    return null;
+  if (quotaInFlight) {
+    return quotaInFlight;
   }
+  quotaInFlight = (async () => {
+    try {
+      const resp = await lsRequest('RetrieveUserQuotaSummary', {
+        metadata: { ideName: 'antigravity', extensionName: 'antigravity' },
+      });
+      const parsed = extractGeminiQuota(resp);
+      if (parsed) {
+        quotaCache = parsed;
+        quotaFetchedAt = Date.now();
+      }
+      return parsed || quotaCache;
+    } catch (err) {
+      console.error('[token-monitor] RetrieveUserQuotaSummary failed:', err.message);
+      return null;
+    } finally {
+      quotaInFlight = null;
+    }
+  })();
+  return quotaInFlight;
 }
