@@ -1074,6 +1074,7 @@
     padding: 11px 12px;
     transition: background-color 0.14s ease;
   }
+  .kpi.kpi-wide { grid-column: 1 / -1; }
   .kpi:hover { background: var(--surface-subtle); }
   .kpi-head {
     display: flex;
@@ -1754,10 +1755,10 @@
       },
       subagents: [
         ...(isSwarm ? [
-          { id: 'swarm-worker-1', isSwarm: true, scriptName: 'ui-polish', role: '前端样式重构 Worker', status: 'CASCADE_RUN_STATUS_RUNNING', modelName: 'Gemini 4 Hydrogen', turnCount: 6, context: { used: 80000, max: 200000, pct: 40.0 }, speed: { latestTokensPerSec: 84 }, cache: { overallHitRate: 74.2 }, totals: { all: 286400 } },
-          { id: 'swarm-worker-2', isSwarm: true, scriptName: 'a11y-audit', role: '无障碍与键盘审查', status: 'CASCADE_RUN_STATUS_IDLE', modelName: 'Gemini 4 Flash', turnCount: 4, context: { used: 42000, max: 200000, pct: 21.0 }, speed: { latestTokensPerSec: 112 }, cache: { overallHitRate: 68.5 }, totals: { all: 118200 } },
+          { id: 'swarm-worker-1', isSwarm: true, scriptName: 'ui-polish', role: '前端样式重构 Worker', status: 'CASCADE_RUN_STATUS_RUNNING', modelName: 'Gemini 4 Hydrogen', turnCount: 6, context: { used: 80000, max: 200000, pct: 40.0 }, speed: { latestTokensPerSec: 84 }, cache: { overallHitRate: 74.2 }, totals: { all: 286400 }, cost: { total: 0.34, priced: true } },
+          { id: 'swarm-worker-2', isSwarm: true, scriptName: 'a11y-audit', role: '无障碍与键盘审查', status: 'CASCADE_RUN_STATUS_IDLE', modelName: 'Gemini 4 Flash', turnCount: 4, context: { used: 42000, max: 200000, pct: 21.0 }, speed: { latestTokensPerSec: 112 }, cache: { overallHitRate: 68.5 }, totals: { all: 118200 }, cost: { total: 0.07, priced: true } },
         ] : []),
-        { id: 'sub-research-01', isSwarm: false, role: '代码库检索子代理', status: 'CASCADE_RUN_STATUS_IDLE', modelName: 'Gemini 4 Hydrogen', turnCount: 5, context: { used: 62000, max: 200000, pct: 31.0 }, speed: { latestTokensPerSec: 79 }, cache: { overallHitRate: 79.1 }, totals: { all: 192000 } },
+        { id: 'sub-research-01', isSwarm: false, role: '代码库检索子代理', status: 'CASCADE_RUN_STATUS_IDLE', modelName: 'Gemini 4 Hydrogen', turnCount: 5, context: { used: 62000, max: 200000, pct: 31.0 }, speed: { latestTokensPerSec: 79 }, cache: { overallHitRate: 79.1 }, totals: { all: 192000 }, cost: { total: 0.21, priced: true } },
       ],
       allTurns: turns,
     };
@@ -3564,8 +3565,9 @@
           : pageTurns.map((t) => {
               const turnKey = String(t.turnIndex);
               const isTurnOpen = expandedTurns.has(turnKey);
-              const tip = `输入 ${fmtTok(t.promptTotal)} (新 ${fmtTok(t.inputTokens)} / 缓存 ${fmtTok(t.cacheReadTokens)})\n输出 ${fmtTok(t.outputTokens)} (思考 ${fmtTok(t.thinkingOutputTokens)} / 正文 ${fmtTok(t.responseOutputTokens)})\n首字 ${fmtSec(t.ttftSec)} · 流式 ${fmtSec(t.streamingSec)}`;
-              const ariaLabel = `第 ${t.turnIndex} 轮，模型 ${t.modelName}，速度 ${fmtSpeed(t.tokensPerSec)}，首字 ${fmtSec(t.ttftSec)}，流式 ${fmtSec(t.streamingSec)}；输入 ${fmtTok(t.promptTotal)}（新 ${fmtTok(t.inputTokens)}，缓存 ${fmtTok(t.cacheReadTokens)}，命中 ${fmtPct(t.cacheHitRate)}）；输出 ${fmtTok(t.outputTokens)}（思考 ${fmtTok(t.thinkingOutputTokens)}，正文 ${fmtTok(t.responseOutputTokens)}）`;
+              const turnCostText = t.cost > 0 ? fmtCost(t.cost) : '';
+              const tip = `输入 ${fmtTok(t.promptTotal)} (新 ${fmtTok(t.inputTokens)} / 缓存 ${fmtTok(t.cacheReadTokens)})\n输出 ${fmtTok(t.outputTokens)} (思考 ${fmtTok(t.thinkingOutputTokens)} / 正文 ${fmtTok(t.responseOutputTokens)})${turnCostText ? `\n估算费用 ${turnCostText}` : ''}\n首字 ${fmtSec(t.ttftSec)} · 流式 ${fmtSec(t.streamingSec)}`;
+              const ariaLabel = `第 ${t.turnIndex} 轮，模型 ${t.modelName}，速度 ${fmtSpeed(t.tokensPerSec)}，首字 ${fmtSec(t.ttftSec)}，流式 ${fmtSec(t.streamingSec)}；输入 ${fmtTok(t.promptTotal)}（新 ${fmtTok(t.inputTokens)}，缓存 ${fmtTok(t.cacheReadTokens)}，命中 ${fmtPct(t.cacheHitRate)}）；输出 ${fmtTok(t.outputTokens)}（思考 ${fmtTok(t.thinkingOutputTokens)}，正文 ${fmtTok(t.responseOutputTokens)}）${turnCostText ? `；估算费用 ${turnCostText}` : ''}`;
               return `
                 <div class="turn-item">
                   <div class="turn-row" role="button" tabindex="0" aria-expanded="${isTurnOpen}" data-turn-idx="${esc(turnKey)}" title="${esc(tip)}" aria-label="${esc(ariaLabel)}">
@@ -3575,7 +3577,7 @@
                         <span class="turn-model">${esc(t.modelName)}</span>
                       </div>
                       <div class="turn-sub num">
-                        ↑${fmtTok(t.promptTotal)} (命中 ${fmtPct(t.cacheHitRate)}) · ↓${fmtTok(t.outputTokens)}
+                        ↑${fmtTok(t.promptTotal)} (命中 ${fmtPct(t.cacheHitRate)}) · ↓${fmtTok(t.outputTokens)}${turnCostText ? ` · ${turnCostText}` : ''}
                       </div>
                     </div>
                     <div class="turn-right num">
@@ -3586,7 +3588,7 @@
                   <div class="turn-detail num" ${isTurnOpen ? '' : 'hidden'}>
                     <span>新输入 ${fmtTok(t.inputTokens)} / 缓存 ${fmtTok(t.cacheReadTokens)}</span>
                     <span>思考 ${fmtTok(t.thinkingOutputTokens)} / 正文 ${fmtTok(t.responseOutputTokens)}</span>
-                    <span>流式时长 ${fmtSec(t.streamingSec)}</span>
+                    <span>流式时长 ${fmtSec(t.streamingSec)}${turnCostText ? ` · 费用 ${turnCostText}` : ''}</span>
                   </div>
                 </div>
               `;
@@ -3608,6 +3610,7 @@
     const normalSubagents = allSubagents.filter((s) => !s.isSwarm);
 
     const swarmSubTotalTok = swarmWorkers.reduce((sum, s) => sum + (Number(s?.totals?.all) || 0), 0);
+    const swarmSubTotalCost = swarmWorkers.reduce((sum, s) => sum + (s?.cost?.priced ? (Number(s.cost.total) || 0) : 0), 0);
     const swarmRunningCount = swarmWorkers.filter((s) => !s.killed && String(s.status || '').includes('RUNNING')).length;
     const swarmVars = ['var(--swarm-1)', 'var(--swarm-2)', 'var(--swarm-3)', 'var(--swarm-4)', 'var(--swarm-5)', 'var(--swarm-6)'];
     const teamTotalTok = (Number(totals.all) || 0) + swarmSubTotalTok;
@@ -3624,6 +3627,7 @@
         const sToneCls = toneClass(sPct);
         const sSpeed = fmtSpeed(s.speed?.latestTokensPerSec);
         const sHit = s.cache?.overallHitRate != null ? `${s.cache.overallHitRate.toFixed(0)}%` : '-';
+        const sCost = s.cost?.priced && s.cost.total > 0 ? ` · ${fmtCost(s.cost.total)}` : '';
         const displayName = (useShortName && s.scriptName) ? s.scriptName : s.role;
         return `
           <div class="sub-row" role="button" tabindex="0" data-sub-id="${esc(s.id)}" title="${esc(s.role)} · 点击查看详情">
@@ -3634,7 +3638,7 @@
                 <span class="state-pill ${stateClass}">${stateText}</span>
               </div>
               <div class="sub-meta num">
-                ${esc(s.modelName || '-')} · ${s.turnCount || 0} 轮 · ${sSpeed} · 命中 ${sHit} · ${fmtTok(s.totals?.all || 0)}
+                ${esc(s.modelName || '-')} · ${s.turnCount || 0} 轮 · ${sSpeed} · 命中 ${sHit} · ${fmtTok(s.totals?.all || 0)}${sCost}
               </div>
             </div>
             <div class="sub-right num">
@@ -3690,7 +3694,7 @@
             <span>Swarm 团队 (${swarmWorkers.length})</span>
             ${swarmRunningCount > 0 ? `<span class="state-pill running num">${swarmRunningCount} 运行中</span>` : ''}
           </span>
-          <span class="dim num" style="font-weight:400;font-size:11px;">成员 ${fmtTok(swarmSubTotalTok)} tok</span>
+          <span class="dim num" style="font-weight:400;font-size:11px;">成员 ${fmtTok(swarmSubTotalTok)} tok${swarmSubTotalCost > 0 ? ` · ${fmtCost(swarmSubTotalCost)}` : ''}</span>
         </button>
         ${swarmDistHtml}
         ${swarmExpanded ? `<div class="sub-list${pendingExpandAnim === 'swarm' ? ' anim-reveal' : ''}">${renderAgentRows(swarmWorkers, true)}</div>` : ''}
@@ -3698,6 +3702,7 @@
     ` : '';
 
     const normalSubTok = normalSubagents.reduce((sum, s) => sum + (Number(s?.totals?.all) || 0), 0);
+    const normalSubCost = normalSubagents.reduce((sum, s) => sum + (s?.cost?.priced ? (Number(s.cost.total) || 0) : 0), 0);
     const normalRunningCount = normalSubagents.filter((s) => !s.killed && String(s.status || '').includes('RUNNING')).length;
     const subagentsHtml = normalSubagents.length > 0 ? `
       <div class="sub-card">
@@ -3709,7 +3714,7 @@
             <span>子代理 (${normalSubagents.length})</span>
             ${normalRunningCount > 0 ? `<span class="state-pill running num">${normalRunningCount} 运行中</span>` : ''}
           </span>
-          <span class="dim num" style="font-weight:400;font-size:11px;">合计 ${fmtTok(normalSubTok)} tok</span>
+          <span class="dim num" style="font-weight:400;font-size:11px;">合计 ${fmtTok(normalSubTok)} tok${normalSubCost > 0 ? ` · ${fmtCost(normalSubCost)}` : ''}</span>
         </button>
         ${subagentsExpanded ? `<div class="sub-list${pendingExpandAnim === 'subagents' ? ' anim-reveal' : ''}">${renderAgentRows(normalSubagents, false)}</div>` : ''}
       </div>
@@ -3801,11 +3806,27 @@
         </div>
 
         <div class="kpi">
-          <div class="kpi-head"><span>累计输出</span><span class="kpi-tag num">${data.cost?.priced && data.cost.total > 0 ? `≈ ${fmtCost(data.cost.total)}` : `总 ${fmtTok(totals.all)}`}</span></div>
+          <div class="kpi-head"><span>累计输出</span><span class="kpi-tag num">总 ${fmtTok(totals.all)}</span></div>
           <div class="kpi-val num">${fmtTokHtml(totals.output)}</div>
           <div class="kpi-sub num">
             思考 ${fmtTok(totals.thinking)} · 回复 ${fmtTok(totals.response)}
           </div>
+        </div>
+
+        <div class="kpi kpi-wide">
+          ${data.cost?.priced
+            ? `
+              <div class="kpi-head"><span>估算费用</span><span class="kpi-tag num">${currency} · 参考单价</span></div>
+              <div class="kpi-val num">${fmtCostHtml(data.cost.total)}</div>
+              <div class="kpi-sub num">
+                输入 ${fmtCost(data.cost.input)} · 缓存 ${fmtCost(data.cost.cacheRead)} · 输出 ${fmtCost(data.cost.output)}${data.cost.savedByCache > 0 ? ` · <span style="color:var(--ok-fg)">省 ${fmtCost(data.cost.savedByCache)}</span>` : ''}
+              </div>
+            `
+            : `
+              <div class="kpi-head"><span>估算费用</span><span class="kpi-tag">未匹配单价</span></div>
+              <div class="kpi-val"><span class="dim" style="font-size:14px;font-weight:500;">未配置模型单价</span></div>
+              <div class="kpi-sub">可在右上角「单价设置」中为 ${esc(data.modelName || '当前模型')} 添加单价规则</div>
+            `}
         </div>
       </div>
 

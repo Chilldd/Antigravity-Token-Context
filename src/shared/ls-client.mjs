@@ -99,8 +99,9 @@ export function findSubagentEntries(summaries, parentOrRootId) {
     if (meta.rootConversationId === parentOrRootId || meta.parentConversationId === parentOrRootId) {
       const spec = meta.subagentSpec || {};
       const scriptName = meta.agentScript?.name || '';
+      const typeName = String(spec.typeName || '').trim().toLowerCase();
       const role = spec.role || scriptName || spec.typeName || info?.summary || id.slice(0, 8);
-      const isSwarm = spec.typeName === 'worker' || Boolean(scriptName);
+      const isSwarm = typeName === 'worker' || (!typeName && /^swarm\b/i.test(String(spec.role || '')));
       results.push({
         id,
         role,
@@ -181,6 +182,7 @@ export async function getLatestMetrics(conversationId = '', { includeSubagents =
             totals: m.totals,
             cache: m.cache,
             speed: m.speed,
+            cost: m.cost,
           };
         } catch {
           return {

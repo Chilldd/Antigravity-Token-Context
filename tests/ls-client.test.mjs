@@ -33,7 +33,46 @@ test('findSubagentEntries discovers child and root-linked subagents', () => {
   assert.equal(subs.length, 1);
   assert.equal(subs[0].id, 'sub-1');
   assert.equal(subs[0].role, 'Swarm Worker (engineer)');
+  assert.equal(subs[0].isSwarm, true);
   assert.equal(subs[0].nestingDepth, 1);
+});
+
+test('findSubagentEntries does not classify non-worker subagents with agentScript as swarm', () => {
+  const summaries = {
+    'root-1': {
+      summary: 'Main Chat',
+      trajectoryMetadata: { rootConversationId: 'root-1' },
+    },
+    'sub-research': {
+      status: 'CASCADE_RUN_STATUS_IDLE',
+      lastModifiedTime: '2026-11-16T07:42:05Z',
+      trajectoryMetadata: {
+        parentConversationId: 'root-1',
+        rootConversationId: 'root-1',
+        nestingDepth: 1,
+        agentScript: { name: 'code-research' },
+        subagentSpec: { typeName: 'research', role: 'Codebase Researcher' },
+      },
+    },
+    'sub-worker': {
+      status: 'CASCADE_RUN_STATUS_IDLE',
+      lastModifiedTime: '2026-11-16T07:42:06Z',
+      trajectoryMetadata: {
+        parentConversationId: 'root-1',
+        rootConversationId: 'root-1',
+        nestingDepth: 1,
+        agentScript: { name: 'ui-polish' },
+        subagentSpec: { typeName: 'worker', role: 'UI Worker' },
+      },
+    },
+  };
+
+  const subs = findSubagentEntries(summaries, 'root-1');
+  assert.equal(subs.length, 2);
+  const worker = subs.find((s) => s.id === 'sub-worker');
+  const research = subs.find((s) => s.id === 'sub-research');
+  assert.equal(worker?.isSwarm, true);
+  assert.equal(research?.isSwarm, false);
 });
 
 test('getLatestMetrics returns no-conversation when conversationId is empty and fallbackToLatest is false', async () => {
