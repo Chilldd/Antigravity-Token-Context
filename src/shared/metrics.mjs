@@ -1,3 +1,5 @@
+import { calculateTokenCost, getPricingConfig, resolveModelPricing } from './pricing.mjs';
+
 /**
  * Parse protobuf-JSON duration strings (e.g. "5.697521100s", "420ms") into seconds.
  * Returns null if missing or non-positive.
@@ -444,6 +446,13 @@ export function computeTrajectoryMetrics(trajectoryResp, catalog = {}) {
   let totalTimedOutput = 0;
   let ttftSum = 0;
   let ttftCount = 0;
+  let totalCost = 0;
+  let totalInputCost = 0;
+  let totalCacheReadCost = 0;
+  let totalOutputCost = 0;
+  let totalCacheSavedCost = 0;
+  let pricedTurnCount = 0;
+  const pricingConfig = getPricingConfig();
 
   for (const t of turns) {
     totalUncachedInput += t.inputTokens;
@@ -452,6 +461,28 @@ export function computeTrajectoryMetrics(trajectoryResp, catalog = {}) {
     totalOutput += t.outputTokens;
     totalThinking += t.thinkingOutputTokens;
     totalResponse += t.responseOutputTokens;
+
+    const turnCost = calculateTokenCost(
+      {
+        inputTokens: t.inputTokens,
+        cacheReadTokens: t.cacheReadTokens,
+        cacheCreationTokens: t.cacheCreationTokens,
+        outputTokens: getEffectiveOutputTokens(t),
+      },
+      t.modelName,
+      t.modelId,
+      pricingConfig,
+    );
+    t.cost = turnCost.total;
+    if (turnCost.priced) {
+      pricedTurnCount += 1;
+      totalCost += turnCost.total;
+      totalInputCost += turnCost.input + turnCost.cacheWrite;
+      totalCacheReadCost += turnCost.cacheRead;
+      totalOutputCost += turnCost.output;
+      totalCacheSavedCost += turnCost.savedByCache;
+    }
+
     const speedInfo = computeTurnSpeed(getEffectiveOutputTokens(t), t.ttftSec, t.streamingSec);
     if (speedInfo) {
       totalStreamingSec += speedInfo.durationSec;
@@ -512,6 +543,15 @@ export function computeTrajectoryMetrics(trajectoryResp, catalog = {}) {
       latestHitRate: latest?.cacheHitRate ?? 0,
       savedInputTokens: totalCacheRead,
     },
+    cost: {
+      total: totalCost,
+      input: totalInputCost,
+      cacheRead: totalCacheReadCost,
+      output: totalOutputCost,
+      savedByCache: totalCacheSavedCost,
+      priced: pricedTurnCount > 0,
+      usdToCny: pricingConfig.usdToCny,
+    },
     speed: {
       latestTokensPerSec: latest?.tokensPerSec ?? null,
       avgTokensPerSec,
@@ -554,6 +594,14 @@ export function aggregateGlobalStats(items, range = 'today') {
   let streamingSec = 0;
   let ttftSum = 0;
   let ttftCount = 0;
+  let totalCost = 0;
+  let totalInputCost = 0;
+  let totalCacheReadCost = 0;
+  let totalOutputCost = 0;
+  let totalCacheSavedCost = 0;
+  let pricedTurns = 0;
+  let unpricedTurns = 0;
+  const pricingConfig = getPricingConfig();
 
   const byModel = new Map();
   const byBucket = new Map();
@@ -572,17 +620,64 @@ export function aggregateGlobalStats(items, range = 'today') {
     thinking += t.thinking || 0;
     response += t.response || 0;
 
+    let itemCostTotal = 0;
+
     for (const turn of item.allTurns || []) {
       const mName = turn.modelName || 'Unknown';
-      const entry = byModel.get(mName) || { modelName: mName, turns: 0, tokens: 0, input: 0, output: 0 };
+      const entry = byModel.get(mName) || {
+        modelName: mName,
+        turns: 0,
+        tokens: 0,
+        input: 0,
+        uncachedInput: 0,
+        cacheRead: 0,
+        output: 0,
+        cost: 0,
+        inputCost: 0,
+        cacheReadCost: 0,
+        outputCost: 0,
+        savedByCache: 0,
+        pricing: resolveModelPricing(mName, turn.modelId, pricingConfig),
+      };
       const turnUncached = (turn.inputTokens || 0) + (turn.cacheCreationTokens || 0);
       const turnCache = turn.cacheReadTokens || 0;
       const turnIn = turnUncached + turnCache;
-      const turnOut = turn.outputTokens || 0;
+      const turnOut = getEffectiveOutputTokens(turn);
+      const turnCost = calculateTokenCost(
+        {
+          inputTokens: turn.inputTokens || 0,
+          cacheReadTokens: turnCache,
+          cacheCreationTokens: turn.cacheCreationTokens || 0,
+          outputTokens: turnOut,
+        },
+        mName,
+        turn.modelId,
+        pricingConfig,
+      );
+
       entry.turns += 1;
       entry.input += turnIn;
+      entry.uncachedInput += turnUncached;
+      entry.cacheRead += turnCache;
       entry.output += turnOut;
       entry.tokens += turnIn + turnOut;
+      if (turnCost.priced) {
+        pricedTurns += 1;
+        const turnInCost = turnCost.input + turnCost.cacheWrite;
+        entry.cost += turnCost.total;
+        entry.inputCost += turnInCost;
+        entry.cacheReadCost += turnCost.cacheRead;
+        entry.outputCost += turnCost.output;
+        entry.savedByCache += turnCost.savedByCache;
+        totalCost += turnCost.total;
+        totalInputCost += turnInCost;
+        totalCacheReadCost += turnCost.cacheRead;
+        totalOutputCost += turnCost.output;
+        totalCacheSavedCost += turnCost.savedByCache;
+        itemCostTotal += turnCost.total;
+      } else {
+        unpricedTurns += 1;
+      }
       byModel.set(mName, entry);
 
       const bucketInfo = formatBucketKey(turn.createdAt || item.lastModifiedTime, range);
@@ -595,16 +690,26 @@ export function aggregateGlobalStats(items, range = 'today') {
           output: 0,
           total: 0,
           turns: 0,
+          cost: 0,
+          inputCost: 0,
+          cacheReadCost: 0,
+          outputCost: 0,
         };
         b.uncachedInput += turnUncached;
         b.cacheRead += turnCache;
         b.output += turnOut;
         b.total += turnIn + turnOut;
         b.turns += 1;
+        if (turnCost.priced) {
+          b.cost += turnCost.total;
+          b.inputCost += turnCost.input + turnCost.cacheWrite;
+          b.cacheReadCost += turnCost.cacheRead;
+          b.outputCost += turnCost.output;
+        }
         byBucket.set(bucketInfo.key, b);
       }
 
-      const speedInfo = computeTurnSpeed(getEffectiveOutputTokens(turn), turn.ttftSec, turn.streamingSec);
+      const speedInfo = computeTurnSpeed(turnOut, turn.ttftSec, turn.streamingSec);
       if (speedInfo) {
         streamingSec += speedInfo.durationSec;
         timedOutput += speedInfo.tokens;
@@ -626,6 +731,7 @@ export function aggregateGlobalStats(items, range = 'today') {
       uncachedInput: 0,
       cacheRead: 0,
       output: 0,
+      cost: 0,
       lastModifiedTime: '',
     };
     if (!item.isSubagent) {
@@ -639,6 +745,7 @@ export function aggregateGlobalStats(items, range = 'today') {
     grp.uncachedInput += t.uncachedInput || 0;
     grp.cacheRead += t.cacheRead || 0;
     grp.output += t.output || 0;
+    grp.cost += itemCostTotal;
     if ((item.lastModifiedTime || '') > grp.lastModifiedTime) {
       grp.lastModifiedTime = item.lastModifiedTime || '';
     }
@@ -653,21 +760,34 @@ export function aggregateGlobalStats(items, range = 'today') {
 
   const models = Array.from(byModel.values())
     .sort((a, b) => b.tokens - a.tokens)
-    .map((m) => ({ ...m, pct: totalAll > 0 ? (m.tokens / totalAll) * 100 : 0 }));
+    .map((m) => ({
+      ...m,
+      pct: totalAll > 0 ? (m.tokens / totalAll) * 100 : 0,
+      costPct: totalCost > 0 ? (m.cost / totalCost) * 100 : 0,
+      costPerTurn: m.turns > 0 ? m.cost / m.turns : 0,
+      costPerMTok: m.tokens > 0 ? (m.cost / m.tokens) * 1e6 : 0,
+    }));
 
   const timeline = Array.from(byBucket.values())
     .sort((a, b) => a.key.localeCompare(b.key))
     .slice(-16);
 
-  const topConversations = Array.from(byRootConv.values())
-    .map((g) => {
-      const gIn = g.uncachedInput + g.cacheRead;
-      return {
-        ...g,
-        cacheHitRate: gIn > 0 ? (g.cacheRead / gIn) * 100 : 0,
-      };
-    })
+  const allRootConvs = Array.from(byRootConv.values()).map((g) => {
+    const gIn = g.uncachedInput + g.cacheRead;
+    return {
+      ...g,
+      cacheHitRate: gIn > 0 ? (g.cacheRead / gIn) * 100 : 0,
+    };
+  });
+
+  const topConversations = allRootConvs
+    .slice()
     .sort((a, b) => b.totalTokens - a.totalTokens)
+    .slice(0, 12);
+
+  const topCostConversations = allRootConvs
+    .slice()
+    .sort((a, b) => b.cost - a.cost || b.totalTokens - a.totalTokens)
     .slice(0, 12);
 
   if (conversations === 0) conversations = byRootConv.size;
@@ -689,6 +809,18 @@ export function aggregateGlobalStats(items, range = 'today') {
       hitRate: cacheHitRate,
       savedInputTokens: cacheRead,
     },
+    cost: {
+      total: totalCost,
+      input: totalInputCost,
+      cacheRead: totalCacheReadCost,
+      output: totalOutputCost,
+      savedByCache: totalCacheSavedCost,
+      avgPerConv: conversations > 0 ? totalCost / conversations : 0,
+      avgPerTurn: turns > 0 ? totalCost / turns : 0,
+      pricedTurns,
+      unpricedTurns,
+      usdToCny: pricingConfig.usdToCny,
+    },
     speed: {
       avgTokensPerSec,
       avgTtftSec,
@@ -696,5 +828,6 @@ export function aggregateGlobalStats(items, range = 'today') {
     models,
     timeline,
     topConversations,
+    topCostConversations,
   };
 }

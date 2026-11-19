@@ -1,11 +1,48 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Response, SidecarApp } from 'sidecar_sdk';
 import { startCdpInjector } from '../../statusline/injector.mjs';
 import { ensureCatalog, getGlobalSummary, getLatestMetrics, listRecentConversations } from '../../shared/ls-client.mjs';
+import { getDefaultPricingConfig, getPricingConfig, resetPricingConfig, savePricingConfig } from '../../shared/pricing.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+const PID_FILE = join(tmpdir(), 'agy-token-monitor.pid');
+
+function takeOverSingleInstance() {
+  try {
+    const raw = readFileSync(PID_FILE, 'utf8').trim();
+    const oldPid = Number.parseInt(raw, 10);
+    if (Number.isInteger(oldPid) && oldPid > 0 && oldPid !== process.pid) {
+      try {
+        process.kill(oldPid, 0);
+        process.kill(oldPid);
+      } catch {
+        // old process already exited or inaccessible
+      }
+    }
+  } catch {
+    // pid file does not exist yet
+  }
+  try {
+    writeFileSync(PID_FILE, String(process.pid), 'utf8');
+  } catch {
+    // ignore pid write failure
+  }
+}
+
+function releasePidFile() {
+  try {
+    if (readFileSync(PID_FILE, 'utf8').trim() === String(process.pid)) {
+      rmSync(PID_FILE, { force: true });
+    }
+  } catch {
+    // ignore cleanup failure
+  }
+}
+
+takeOverSingleInstance();
 const ECHARTS_JS = readFileSync(join(HERE, 'vendor', 'echarts.min.js'), 'utf8');
 const app = new SidecarApp();
 
@@ -44,6 +81,41 @@ app.api('/api/summary', async (data) => {
   }
 }, 'GET');
 
+app.api('/api/pricing', async () => {
+  try {
+    return { config: getPricingConfig(), defaults: getDefaultPricingConfig() };
+  } catch (err) {
+    return { error: 'failed', message: err.message };
+  }
+}, 'GET');
+
+app.api('/api/pricing', async (data) => {
+  try {
+    const config = savePricingConfig(data);
+    return { ok: true, config };
+  } catch (err) {
+    return { error: 'failed', message: err.message };
+  }
+}, 'POST');
+
+app.api('/api/pricing/reset', async () => {
+  try {
+    const config = resetPricingConfig();
+    return { ok: true, config };
+  } catch (err) {
+    return { error: 'failed', message: err.message };
+  }
+}, 'POST');
+
 app.run();
 ensureCatalog();
-startCdpInjector({ getMetrics: (cid) => getLatestMetrics(cid, { includeSubagents: false, fallbackToLatest: false }) });
+const stopInjector = startCdpInjector({ getMetrics: (cid) => getLatestMetrics(cid, { includeSubagents: false, fallbackToLatest: false }) });
+
+function shutdown() {
+  try { stopInjector(); } catch {}
+  releasePidFile();
+  process.exit(0);
+}
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
+process.on('exit', releasePidFile);

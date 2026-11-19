@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Context &amp; Token Monitor</title>
 <script src="/preload.js"></script>
-<script src="/echarts.min.js"></script>
+<script src="/echarts.min.js" onerror="var s=document.createElement('script');s.src='./vendor/echarts.min.js';document.head.appendChild(s);"></script>
 <style>
   :root {
     --fg: var(--foreground, #1f2328);
@@ -19,15 +19,31 @@
     --accent: #3b82f6;
     --ok: #10b981;
     --warn: #f59e0b;
+    --warn-fg: #b45309;
     --danger: #ef4444;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --fg: var(--foreground, #e6edf3);
       --dim: var(--muted-foreground, #8b949e);
+      --warn-fg: #fbbf24;
     }
   }
+  :root.light-surface { --warn-fg: #b45309; }
+  :root.dark-surface { --warn-fg: #fbbf24; }
   * { box-sizing: border-box; }
+  ::selection {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    color: var(--fg);
+  }
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .sub-row:focus-visible,
+  .turn-row:focus-visible {
+    outline-offset: -2px;
+  }
   body {
     margin: 0;
     color: var(--fg);
@@ -43,7 +59,7 @@
   }
   ::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--fg) 28%, transparent); }
 
-  main { padding: 12px 14px 20px; }
+  main { padding: 12px 14px 20px; overflow-x: clip; }
   .num { font-variant-numeric: tabular-nums; }
   .dim { color: var(--dim); }
 
@@ -69,32 +85,32 @@
     transition: all 0.14s ease;
   }
   .seg-btn:hover { color: var(--fg); }
+  .seg-btn:active { transform: scale(0.97); }
   .seg-btn.active {
     background: var(--surface-hover);
     color: var(--fg);
     font-weight: 600;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
   }
-  .range-row {
+  .filter-bar {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
+    flex-direction: column;
+    gap: 6px;
     margin-bottom: 10px;
   }
-  .scope-row {
+  .filter-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 8px;
+    flex-wrap: wrap;
+    gap: 6px 8px;
   }
   .seg-bar.seg-sm {
     border-radius: 7px;
   }
   .seg-bar.seg-sm .seg-btn {
     font-size: 11px;
-    padding: 2px 9px;
+    padding: 2px 8px;
     border-radius: 5px;
   }
   .model-row {
@@ -108,10 +124,21 @@
   }
   .model-row:last-child { border-bottom: none; }
   .model-bar-wrap { flex: 1; min-width: 0; }
-  .model-bar-top { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+  .model-bar-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 17px; margin-bottom: 4px; }
   .model-bar-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .model-bar { height: 4px; border-radius: 999px; background: var(--track); overflow: hidden; }
-  .model-bar > div { height: 100%; border-radius: 999px; background: var(--accent); }
+  .model-bar > div { height: 100%; border-radius: 999px; background: var(--accent); transition: width 0.55s cubic-bezier(0.25, 1, 0.5, 1); }
+  .model-bar.cost-bar > div { background: var(--warn); }
+  .model-bar-sub {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 4px;
+    font-size: 10.5px;
+    color: var(--dim);
+  }
+  .sub-ctx-sub { font-size: 10.5px; color: var(--dim); margin-top: 1px; }
 
   /* Charts */
   .chart-card {
@@ -126,6 +153,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
+    min-height: 17px;
     margin-bottom: 8px;
   }
   .chart-title { font-size: 11.5px; font-weight: 600; color: var(--fg); }
@@ -140,110 +168,7 @@
   }
   .chart-leg-item { display: inline-flex; align-items: center; gap: 4px; }
   .chart-leg-dot { width: 7px; height: 7px; border-radius: 2px; flex: none; }
-  .donut-wrap {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-  }
-  .donut-rows {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    font-size: 11.5px;
-  }
-  .donut-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 8px;
-  }
-
   /* Tool Treemap */
-  .tm-strip {
-    display: flex;
-    height: 4px;
-    border-radius: 999px;
-    overflow: hidden;
-    gap: 1.5px;
-    margin-bottom: 8px;
-    background: var(--track);
-  }
-  .tm-box {
-    position: relative;
-    width: 100%;
-    height: 176px;
-  }
-  .tm-group {
-    position: absolute;
-    border-radius: 7px;
-    padding: 3px;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-  }
-  .tm-ghead {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 9.5px;
-    font-weight: 600;
-    line-height: 1.2;
-    padding: 0 2px 2px;
-    color: #1f2328;
-    white-space: nowrap;
-    overflow: hidden;
-  }
-  .tm-gbody {
-    position: relative;
-    flex: 1;
-    min-height: 0;
-  }
-  .tm-leaf {
-    position: absolute;
-    border-radius: 5px;
-    padding: 3px 5px;
-    overflow: hidden;
-    border: 1px solid rgba(255, 255, 255, 0.55);
-    color: #18181b;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    cursor: default;
-  }
-  .tm-leaf-name {
-    font-size: 10px;
-    font-weight: 600;
-    line-height: 1.15;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .tm-leaf-val {
-    font-size: 9.5px;
-    opacity: 0.78;
-    line-height: 1.15;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .tm-pills {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px 6px;
-    margin-top: 8px;
-  }
-  .tm-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 2px 7px;
-    border-radius: 999px;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    font-size: 10.5px;
-    color: var(--dim);
-  }
   .tm-pill-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
 
   /* Header */
@@ -251,8 +176,19 @@
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
     margin-bottom: 10px;
   }
+  .session-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    min-height: 28px;
+    margin-bottom: 10px;
+  }
+  .session-title {
+    min-width: 0; flex: 1;
+    font-size: 12px; font-weight: 600; color: var(--fg);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    text-align: right;
+  }
   .model-badge {
-    display: inline-flex; align-items: center; gap: 7px; min-width: 0;
+    display: inline-flex; align-items: center; gap: 7px; min-width: 0; max-width: 58%; flex: 0 1 auto;
     padding: 4px 10px 4px 8px; border-radius: 999px;
     background: var(--surface); border: 1px solid var(--line);
   }
@@ -272,8 +208,130 @@
     cursor: pointer; transition: all 0.15s ease;
   }
   .icon-btn:hover:not(:disabled) { color: var(--fg); background: var(--surface-hover); border-color: color-mix(in srgb, var(--fg) 20%, transparent); }
+  .icon-btn:active:not(:disabled),
+  .back-btn:active,
+  .hero-alert-btn:active { transform: scale(0.97); }
   .icon-btn:disabled { opacity: 0.4; cursor: default; }
   .icon-btn svg { width: 13px; height: 13px; }
+  .icon-btn.active {
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 32%, transparent);
+  }
+  .icon-btn.primary {
+    color: #fff;
+    background: var(--accent);
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+  .icon-btn.primary:hover:not(:disabled) {
+    color: #fff;
+    background: color-mix(in srgb, var(--accent) 88%, #000);
+    border-color: var(--accent);
+  }
+  .settings-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px 11px;
+    margin-bottom: 10px;
+  }
+  .settings-note {
+    font-size: 11px;
+    color: var(--dim);
+    margin: 0 0 8px;
+    line-height: 1.45;
+  }
+  .rate-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .rate-input-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .field-input {
+    width: 100%;
+    height: 26px;
+    padding: 0 7px;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--fg);
+    font: inherit;
+    font-size: 11.5px;
+  }
+  .field-input:focus {
+    outline: 1.5px solid var(--accent);
+    border-color: var(--accent);
+  }
+  .price-rule-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .price-rule {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 9px;
+    background: color-mix(in srgb, var(--fg) 1.5%, transparent);
+  }
+  .price-rule-head {
+    display: grid;
+    grid-template-columns: 1fr 1fr 24px;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .price-rule-del {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--dim);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+  }
+  .price-rule-del:hover {
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 10%, transparent);
+  }
+  .price-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .price-field label {
+    display: block;
+    font-size: 10px;
+    color: var(--dim);
+    margin-bottom: 2px;
+  }
+  .price-field .field-input {
+    height: 24px;
+    padding: 0 5px;
+    font-size: 11px;
+  }
+  .settings-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .settings-status {
+    font-size: 11px;
+    color: var(--ok);
+  }
+  .settings-status.err {
+    color: var(--danger);
+  }
   .icon-btn.loading svg { animation: spin 0.7s linear infinite; }
   @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
@@ -297,53 +355,163 @@
   /* Hero Context Card with 100-dot grid */
   .hero {
     background: var(--surface);
-    border: 1px solid var(--line);
+    border: 1px solid color-mix(in srgb, var(--fg) 14%, transparent);
+    box-shadow: 0 2px 10px color-mix(in srgb, var(--fg) 4%, transparent);
     border-radius: 12px;
-    padding: 12px 13px;
-    margin-bottom: 10px;
+    padding: 14px 14px 12px;
+    margin-bottom: 12px;
   }
-  .hero-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .hero-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 21px; }
   .hero-label { font-size: 11.5px; font-weight: 500; color: var(--dim); }
   .pct-pill {
     font-size: 11.5px; font-weight: 600; padding: 1px 8px; border-radius: 999px;
     border: 1px solid transparent;
   }
-  .hero-nums { display: flex; align-items: baseline; gap: 6px; margin: 3px 0 10px; }
-  .hero-used { font-size: 24px; font-weight: 700; letter-spacing: -0.025em; }
+  .hero-nums { display: flex; align-items: baseline; gap: 6px; margin: 4px 0 11px; }
+  .hero-used { font-size: 28px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.1; }
   .hero-max { font-size: 12.5px; color: var(--dim); }
 
   .dot-grid {
     display: grid;
     grid-template-columns: repeat(20, minmax(0, 1fr));
     gap: 4px;
-    max-width: 310px;
-    margin-bottom: 11px;
+    max-width: 320px;
+    margin-bottom: 12px;
   }
   .ctx-dot {
     aspect-ratio: 1;
     border-radius: 50%;
     background: var(--empty-dot);
+    transition: transform 0.25s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.25s ease;
   }
+  .dot-grid.animate-in .ctx-dot {
+    animation: dotIn 0.52s cubic-bezier(0.25, 1, 0.5, 1) both;
+    animation-delay: var(--dot-delay, 0ms);
+  }
+  @keyframes dotIn {
+    from { opacity: 0; transform: scale(0.45); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  .hero.has-hover .ctx-dot { opacity: 0.24; }
+  .hero.has-hover .ctx-dot.is-match { opacity: 1; transform: scale(1.22); }
 
   .cat-list {
     border-top: 1px solid var(--line);
-    padding-top: 8px;
+    padding-top: 7px;
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: 2px;
   }
   .cat-row {
     display: grid;
     grid-template-columns: 10px 1fr auto 42px;
     align-items: center;
     gap: 7px;
+    min-height: 23px;
     font-size: 11.5px;
-    padding: 1px 0;
+    padding: 3px 5px;
+    margin: 0 -5px;
+    border-radius: 6px;
+    cursor: default;
+    transition: background-color 0.14s ease;
   }
-  .cat-mark { width: 7px; height: 7px; border-radius: 50%; }
+  .cat-row.is-match { background: var(--surface-hover); }
+  .cat-more-btn {
+    align-self: flex-start;
+    margin-top: 2px;
+    padding: 2px 6px;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--dim);
+    font: inherit;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: color 0.14s ease, background-color 0.14s ease;
+  }
+  .cat-more-btn:hover { color: var(--fg); background: var(--surface-hover); }
+  .cat-mark { width: 7px; height: 7px; border-radius: 50%; justify-self: center; }
   .cat-mark.free { background: transparent; border: 1.5px solid var(--empty-dot); }
   .cat-tok { text-align: right; font-weight: 500; }
   .cat-pct { text-align: right; color: var(--dim); font-size: 11px; }
+
+  .hero-alert {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 0 0 10px;
+    padding: 7px 9px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.4;
+  }
+  .hero-alert.warn {
+    background: color-mix(in srgb, var(--warn) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+    color: var(--warn-fg);
+  }
+  .hero-alert.crit {
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--danger) 38%, transparent);
+    color: var(--danger);
+  }
+  .hero-alert-btn {
+    flex: none;
+    border: 1px solid currentColor;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 10.5px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.14s ease;
+  }
+  .hero-alert-btn:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
+
+  .err-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--danger) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--danger) 32%, transparent);
+    color: var(--danger);
+    font-size: 11.5px;
+  }
+  .empty-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 24px 16px;
+    text-align: center;
+    color: var(--dim);
+  }
+  .empty-card-title { font-size: 12.5px; font-weight: 600; color: var(--fg); margin-bottom: 4px; }
+  .empty-card-desc { font-size: 11.5px; margin-bottom: 12px; }
+  .empty-card-actions { display: inline-flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+
+  .mock-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+    padding: 6px 9px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    border: 1px dashed color-mix(in srgb, var(--accent) 35%, transparent);
+    font-size: 11px;
+  }
+  .mock-tag { font-weight: 600; color: var(--accent); }
 
   /* Bento KPI Grid */
   .bento { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
@@ -355,13 +523,17 @@
     transition: border-color 0.15s ease;
   }
   .kpi:hover { border-color: color-mix(in srgb, var(--fg) 18%, transparent); }
-  .kpi-head { display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: var(--dim); margin-bottom: 4px; }
+  .kpi-head { display: flex; align-items: center; justify-content: space-between; min-height: 16px; font-size: 11px; color: var(--dim); margin-bottom: 4px; }
   .kpi-tag {
     font-size: 10px; padding: 0 5px; border-radius: 4px;
     background: var(--track); color: var(--dim);
   }
-  .kpi-val { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; color: var(--fg); }
-  .kpi-sub { font-size: 11px; color: var(--dim); margin-top: 4px; line-height: 1.4; }
+  .kpi-val { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; color: var(--fg); min-height: 26px; }
+  .kpi-sub { font-size: 11px; color: var(--dim); margin-top: 4px; line-height: 1.4; min-height: 15.5px; }
+  .stage-skeleton .kpi-val,
+  .stage-skeleton .kpi-sub,
+  .skel-crossfade-out .kpi-val,
+  .skel-crossfade-out .kpi-sub { display: flex; align-items: center; }
 
   /* Subagents Section */
   .sub-card {
@@ -391,7 +563,7 @@
   .sub-right { text-align: right; flex: none; min-width: 78px; }
   .sub-ctx { font-size: 11.5px; font-weight: 600; }
   .sub-bar { height: 4px; border-radius: 999px; background: var(--track); overflow: hidden; margin-top: 4px; }
-  .sub-bar > div { height: 100%; border-radius: 999px; }
+  .sub-bar > div { height: 100%; border-radius: 999px; transition: width 0.55s cubic-bezier(0.25, 1, 0.5, 1); }
 
   .swarm-dist {
     padding: 9px 11px;
@@ -428,11 +600,13 @@
     border-radius: 10px;
     overflow: hidden;
   }
-  .turns-toggle {
+  .turns-toggle,
+  .card-head {
     width: 100%;
     display: flex;
     align-items: center;
     justify-content: space-between;
+    min-height: 36px;
     padding: 9px 11px;
     border: none;
     background: transparent;
@@ -440,23 +614,154 @@
     font: inherit;
     font-size: 12px;
     font-weight: 600;
+  }
+  .turns-toggle {
     cursor: pointer;
     transition: background-color 0.12s ease;
   }
   .turns-toggle:hover { background: var(--surface-hover); }
   .turns-toggle-left { display: inline-flex; align-items: center; gap: 6px; }
-  .chevron { width: 13px; height: 13px; color: var(--dim); transition: transform 0.16s ease; }
+  .chevron { width: 13px; height: 13px; color: var(--dim); transition: transform 0.35s cubic-bezier(0.25, 1, 0.5, 1); }
   .chevron.open { transform: rotate(90deg); }
 
   .turn-list { border-top: 1px solid var(--line); }
+  .turn-item { border-bottom: 1px solid var(--line); }
+  .turn-item:last-child { border-bottom: none; }
   .turn-row {
     display: flex; align-items: center; justify-content: space-between; gap: 10px;
     padding: 8px 11px;
-    border-bottom: 1px solid var(--line);
+    cursor: pointer;
     transition: background-color 0.12s ease;
   }
-  .turn-row:last-child { border-bottom: none; }
   .turn-row:hover { background: var(--surface-hover); }
+  .turn-detail {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    padding: 6px 11px 8px;
+    border-top: 1px dashed var(--line);
+    background: color-mix(in srgb, var(--fg) 2%, transparent);
+    font-size: 10.5px;
+    color: var(--dim);
+  }
+  .turn-detail:not([hidden]) {
+    animation: revealDown 0.38s cubic-bezier(0.25, 1, 0.5, 1) both;
+  }
+  @keyframes revealDown {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .view-stage {
+    position: relative;
+    min-height: 220px;
+  }
+  .stage-layer {
+    position: relative;
+    width: 100%;
+    will-change: opacity, transform;
+  }
+  .stage-layer.exit-forward {
+    pointer-events: none;
+    animation: stageExitLeft 0.15s cubic-bezier(0.4, 0, 1, 1) forwards;
+  }
+  .stage-layer.exit-backward {
+    pointer-events: none;
+    animation: stageExitRight 0.15s cubic-bezier(0.4, 0, 1, 1) forwards;
+  }
+  .stage-layer.exit-fade {
+    pointer-events: none;
+    animation: stageExitFade 0.12s ease-out forwards;
+  }
+  .stage-layer.enter-forward {
+    animation: stageEnterRight 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .stage-layer.enter-backward {
+    animation: stageEnterLeft 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .stage-layer.enter-fade {
+    animation: stageEnterFade 0.18s ease-out both;
+  }
+  .stage-layer.skel-crossfade-out {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 2;
+    pointer-events: none;
+    animation: skelCrossfadeOut 0.22s ease-out forwards;
+  }
+  .stage-layer.data-crossfade-in {
+    position: relative;
+    z-index: 1;
+    animation: dataCrossfadeIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  @keyframes stageExitLeft {
+    from { opacity: 1; transform: translateX(0); }
+    to { opacity: 0; transform: translateX(-14px); }
+  }
+  @keyframes stageExitRight {
+    from { opacity: 1; transform: translateX(0); }
+    to { opacity: 0; transform: translateX(14px); }
+  }
+  @keyframes stageExitFade {
+    from { opacity: 1; }
+    to { opacity: 0; }
+  }
+  @keyframes stageEnterRight {
+    from { opacity: 0; transform: translateX(14px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes stageEnterLeft {
+    from { opacity: 0; transform: translateX(-14px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes stageEnterFade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes skelCrossfadeOut {
+    from { opacity: 1; }
+    to { opacity: 0; }
+  }
+  @keyframes dataCrossfadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  .anim-reveal {
+    animation: panelReveal 0.45s cubic-bezier(0.25, 1, 0.5, 1) both;
+  }
+  @keyframes panelReveal {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Skeleton Loading */
+  .skel {
+    display: block;
+    position: relative;
+    overflow: hidden;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--fg) 8%, transparent);
+  }
+  .skel::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--fg) 7%, transparent), transparent);
+    animation: skelShimmer 1.8s ease-in-out infinite;
+  }
+  @keyframes skelShimmer {
+    100% { transform: translateX(100%); }
+  }
+  .skel-pill { height: 20px; border-radius: 999px; }
+  .skel-badge { height: 27px; border-radius: 999px; }
+  .skel-line { height: 11px; }
+  .skel-tag { height: 15px; width: 32px; border-radius: 4px; }
+  .skel-val { height: 20px; width: 68px; }
+  .skel-hero-num { height: 31px; width: 148px; }
+  .skel-chart { height: 152px; border-radius: 8px; }
+  .turn-detail[hidden] { display: none; }
   .turn-left { min-width: 0; flex: 1; }
   .turn-title { display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 500; }
   .turn-num {
@@ -487,6 +792,40 @@
     font-size: 11px; color: var(--dim);
     display: flex; justify-content: space-between; gap: 8px;
   }
+  @media (prefers-reduced-motion: reduce) {
+    .dot.running,
+    .sub-dot.running,
+    .icon-btn.loading svg,
+    .dot-grid.animate-in .ctx-dot,
+    .turn-detail:not([hidden]),
+    .stage-layer,
+    .anim-reveal,
+    .skel::after {
+      animation: none;
+    }
+    .seg-btn,
+    .icon-btn,
+    .kpi,
+    .sub-row,
+    .turns-toggle,
+    .chevron,
+    .turn-row,
+    .hero-alert-btn,
+    .ctx-dot,
+    .cat-row,
+    .cat-more-btn,
+    .model-bar > div,
+    .sub-bar > div {
+      transition: none;
+    }
+    .seg-btn:active,
+    .icon-btn:active:not(:disabled),
+    .back-btn:active,
+    .hero-alert-btn:active,
+    .hero.has-hover .ctx-dot.is-match {
+      transform: none;
+    }
+  }
 </style>
 </head>
 <body>
@@ -501,9 +840,19 @@
   const params = new URLSearchParams(location.search);
   const appEl = document.getElementById('app');
 
-  let viewMode = 'session'; // 'session' | 'summary'
+  const UI_STATE_KEY = 'agy-token-monitor-ui-state';
+  const expandedTurns = new Set();
+
+  let viewMode = 'session'; // 'session' | 'summary' | 'settings'
+  let previousViewMode = 'summary';
   let summaryScope = 'workspace'; // 'workspace' | 'all'
   let summaryRange = 'today'; // 'today' | '7d' | '30d' | 'all'
+  let summaryMetric = 'tokens'; // 'tokens' | 'cost'
+  let currency = 'USD'; // 'USD' | 'CNY'
+  let usdToCny = 6.67;
+  let pricingDraft = null;
+  let pricingStatusMsg = '';
+  let pricingStatusErr = false;
   let toolViewMode = 'treemap'; // 'treemap' | 'list'
   let selectedConversationId = '';
   let lastData = null;
@@ -516,7 +865,315 @@
   let turnsExpanded = false; // default collapsed
   let swarmExpanded = false; // default collapsed
   let subagentsExpanded = false; // default collapsed
+  let catsExpanded = false; // default Top 4
+  let lastAnimatedSessionId = '';
+  let pendingExpandAnim = '';
+  let pendingChartAnim = true;
   let currentPage = 1;
+  let mockMode = params.get('mock') === '1' || location.protocol === 'file:';
+  let mockScenario = params.get('scenario') || 'normal'; // 'normal' | 'high' | 'swarm' | 'empty' | 'error'
+  let lastFetchError = '';
+
+  function loadUiState() {
+    try {
+      const raw = localStorage.getItem(UI_STATE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      if (!saved || typeof saved !== 'object') return;
+      if (saved.viewMode === 'session' || saved.viewMode === 'summary') viewMode = saved.viewMode;
+      if (saved.summaryScope === 'workspace' || saved.summaryScope === 'all') summaryScope = saved.summaryScope;
+      if (saved.summaryRange === 'today' || saved.summaryRange === '7d' || saved.summaryRange === '30d' || saved.summaryRange === 'all') summaryRange = saved.summaryRange;
+      if (saved.summaryMetric === 'tokens' || saved.summaryMetric === 'cost') summaryMetric = saved.summaryMetric;
+      if (saved.currency === 'USD' || saved.currency === 'CNY') currency = saved.currency;
+      if (saved.toolViewMode === 'treemap' || saved.toolViewMode === 'list') toolViewMode = saved.toolViewMode;
+      if (typeof saved.turnsExpanded === 'boolean') turnsExpanded = saved.turnsExpanded;
+      if (typeof saved.swarmExpanded === 'boolean') swarmExpanded = saved.swarmExpanded;
+      if (typeof saved.subagentsExpanded === 'boolean') subagentsExpanded = saved.subagentsExpanded;
+      if (typeof saved.catsExpanded === 'boolean') catsExpanded = saved.catsExpanded;
+    } catch {}
+  }
+
+  function saveUiState() {
+    try {
+      localStorage.setItem(UI_STATE_KEY, JSON.stringify({
+        viewMode: viewMode === 'settings' ? previousViewMode : viewMode,
+        summaryScope,
+        summaryRange,
+        summaryMetric,
+        currency,
+        toolViewMode,
+        turnsExpanded,
+        swarmExpanded,
+        subagentsExpanded,
+        catsExpanded,
+      }));
+    } catch {}
+  }
+
+  loadUiState();
+
+  function buildMockDots(categories, max) {
+    const dots = new Array(100).fill(null);
+    if (!max || max <= 0) return dots;
+    let cursor = 0;
+    for (const c of categories) {
+      const count = Math.round((c.tokens / max) * 100);
+      for (let i = 0; i < count && cursor < 100; i++, cursor++) {
+        dots[cursor] = c.color;
+      }
+    }
+    return dots;
+  }
+
+  function getMockMetrics(cid) {
+    if (mockScenario === 'empty') {
+      return { error: 'no-conversation' };
+    }
+    if (mockScenario === 'error') {
+      return { error: 'connect-failed', message: '无法连接本地语言服务器（端口 51789 无响应）' };
+    }
+    if (cid === 'sub-research-01' || cid === 'swarm-worker-1') {
+      const max = 200000;
+      const cats = [
+        { name: '系统提示与工具', tokens: 18000, pct: 9.0, color: '#64748b' },
+        { name: '对话历史', tokens: 24000, pct: 12.0, color: '#3b82f6' },
+        { name: '工具调用与文件', tokens: 38000, pct: 19.0, color: '#10b981' },
+      ];
+      return {
+        cascadeId: cid,
+        parentConversationId: 'conv-mock-main-8f3a',
+        title: cid === 'swarm-worker-1' ? '前端样式重构 Worker' : '代码库检索子代理',
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        modelName: 'Gemini 4 Hydrogen (Medium)',
+        turnCount: 6,
+        numTotalSteps: 18,
+        updatedAt: Date.now(),
+        context: { used: 80000, max, free: 120000, pct: 40.0 },
+        breakdown: { dots: buildMockDots(cats, max), categories: cats, free: { tokens: 120000, pct: 60.0 } },
+        speed: { latestTokensPerSec: 84, avgTokensPerSec: 76, latestTtftSec: 0.72 },
+        cache: { overallHitRate: 74.2, latestHitRate: 81.5, savedInputTokens: 195000 },
+        totals: { all: 286400, inputAll: 262000, uncachedInput: 67000, cacheRead: 195000, output: 24400, thinking: 14200, response: 10200 },
+        allTurns: [
+          { turnIndex: 6, modelName: 'Gemini 4 Hydrogen', promptTotal: 52000, inputTokens: 9600, cacheReadTokens: 42400, cacheHitRate: 81.5, outputTokens: 4200, thinkingOutputTokens: 2500, responseOutputTokens: 1700, tokensPerSec: 84, ttftSec: 0.72, streamingSec: 1.9 },
+          { turnIndex: 5, modelName: 'Gemini 4 Hydrogen', promptTotal: 48000, inputTokens: 11200, cacheReadTokens: 36800, cacheHitRate: 76.7, outputTokens: 3800, thinkingOutputTokens: 2100, responseOutputTokens: 1700, tokensPerSec: 79, ttftSec: 0.85, streamingSec: 1.6 },
+        ],
+      };
+    }
+
+    const isHigh = mockScenario === 'high';
+    const isSwarm = mockScenario === 'swarm';
+    const max = 200000;
+    const cats = isHigh
+      ? [
+          { name: '系统提示与工具', tokens: 26000, pct: 13.0, color: '#64748b' },
+          { name: '对话历史', tokens: 78000, pct: 39.0, color: '#3b82f6' },
+          { name: '工具调用与文件', tokens: 64000, pct: 32.0, color: '#10b981' },
+          { name: '推理思考', tokens: 14000, pct: 7.0, color: '#a855f7' },
+        ]
+      : [
+          { name: '系统提示与工具', tokens: 24000, pct: 12.0, color: '#64748b' },
+          { name: '对话历史', tokens: 34000, pct: 17.0, color: '#3b82f6' },
+          { name: '工具调用与文件', tokens: 22000, pct: 11.0, color: '#10b981' },
+          { name: '推理思考', tokens: 6000, pct: 3.0, color: '#a855f7' },
+        ];
+    const used = cats.reduce((s, c) => s + c.tokens, 0);
+    const pct = (used / max) * 100;
+    const turns = Array.from({ length: 14 }, (_, i) => {
+      const idx = 14 - i;
+      return {
+        turnIndex: idx,
+        modelName: 'Gemini 4 Hydrogen',
+        promptTotal: 32000 + idx * 3800,
+        inputTokens: 6400 + (idx % 3) * 1200,
+        cacheReadTokens: 25600 + idx * 3200,
+        cacheHitRate: 78 + (idx % 5) * 2.4,
+        outputTokens: 2400 + (idx % 4) * 650,
+        thinkingOutputTokens: 1300 + (idx % 4) * 350,
+        responseOutputTokens: 1100 + (idx % 3) * 300,
+        tokensPerSec: 64 + (idx % 6) * 5,
+        ttftSec: 0.65 + (idx % 4) * 0.18,
+        streamingSec: 1.4 + (idx % 3) * 0.4,
+      };
+    });
+
+    return {
+      cascadeId: 'conv-mock-main-8f3a',
+      title: isHigh ? '长上下文架构重构排查' : (isSwarm ? 'Swarm 并行优化侧边栏' : '评价状态栏与侧边栏设计'),
+      status: isSwarm ? 'CASCADE_RUN_STATUS_RUNNING' : 'CASCADE_RUN_STATUS_IDLE',
+      modelName: 'Gemini 4 Hydrogen (Medium)',
+      turnCount: 14,
+      numTotalSteps: 42,
+      updatedAt: Date.now(),
+      context: { used, max, free: max - used, pct },
+      breakdown: { dots: buildMockDots(cats, max), categories: cats, free: { tokens: max - used, pct: 100 - pct } },
+      speed: { latestTokensPerSec: 78, avgTokensPerSec: 71, latestTtftSec: 0.82 },
+      cache: { overallHitRate: 81.4, latestHitRate: 86.2, savedInputTokens: 984000 },
+      cost: { total: 1.45, input: 0.28, cacheRead: 0.31, output: 0.86, savedByCache: 0.92, priced: true },
+      totals: { all: 1296000, inputAll: 1210000, uncachedInput: 226000, cacheRead: 984000, output: 86000, thinking: 48200, response: 37800 },
+      toolTreemap: {
+        totalTokens: 142000,
+        groups: [
+          { name: '文件读写', tokens: 68000, pct: 47.9, count: 16, color: '#93c5fd', items: [{ name: 'read_file', tokens: 44000, pct: 31.0, count: 11 }, { name: 'edit_file', tokens: 24000, pct: 16.9, count: 5 }] },
+          { name: '命令执行', tokens: 46000, pct: 32.4, count: 7, color: '#86efac', items: [{ name: 'run_command', tokens: 46000, pct: 32.4, count: 7 }] },
+          { name: '代码检索', tokens: 28000, pct: 19.7, count: 5, color: '#fde68a', items: [{ name: 'rg / grep', tokens: 28000, pct: 19.7, count: 5 }] },
+        ],
+      },
+      subagents: [
+        ...(isSwarm ? [
+          { id: 'swarm-worker-1', isSwarm: true, scriptName: 'ui-polish', role: '前端样式重构 Worker', status: 'CASCADE_RUN_STATUS_RUNNING', modelName: 'Gemini 4 Hydrogen', turnCount: 6, context: { used: 80000, max: 200000, pct: 40.0 }, speed: { latestTokensPerSec: 84 }, cache: { overallHitRate: 74.2 }, totals: { all: 286400 } },
+          { id: 'swarm-worker-2', isSwarm: true, scriptName: 'a11y-audit', role: '无障碍与键盘审查', status: 'CASCADE_RUN_STATUS_IDLE', modelName: 'Gemini 4 Flash', turnCount: 4, context: { used: 42000, max: 200000, pct: 21.0 }, speed: { latestTokensPerSec: 112 }, cache: { overallHitRate: 68.5 }, totals: { all: 118200 } },
+        ] : []),
+        { id: 'sub-research-01', isSwarm: false, role: '代码库检索子代理', status: 'CASCADE_RUN_STATUS_IDLE', modelName: 'Gemini 4 Hydrogen', turnCount: 5, context: { used: 62000, max: 200000, pct: 31.0 }, speed: { latestTokensPerSec: 79 }, cache: { overallHitRate: 79.1 }, totals: { all: 192000 } },
+      ],
+      allTurns: turns,
+    };
+  }
+
+  function getMockSummary() {
+    if (mockScenario === 'error') {
+      return { error: 'connect-failed', message: '无法读取全局统计汇总（语言服务器未启动）' };
+    }
+    const mult = summaryRange === 'today' ? 1 : (summaryRange === '7d' ? 4.2 : (summaryRange === '30d' ? 11.5 : 18.0));
+    const scopeMult = summaryScope === 'all' ? 1.6 : 1;
+    const f = mult * scopeMult;
+    const cacheRead = Math.round(1850000 * f);
+    const uncachedInput = Math.round(420000 * f);
+    const output = Math.round(165000 * f);
+    const thinking = Math.round(92000 * f);
+    const response = output - thinking;
+    const inputAll = cacheRead + uncachedInput;
+    const all = inputAll + output;
+    const labels = summaryRange === 'today' ? ['09:00', '11:00', '13:00', '15:00', '17:00'] : ['周一', '周二', '周三', '周四', '周五'];
+    const totalCost = 3.24 * f;
+    const inputCost = 0.62 * f;
+    const cacheReadCost = 0.68 * f;
+    const outputCost = 1.94 * f;
+    const savedByCache = 2.05 * f;
+    const mockModels = [
+      {
+        modelName: 'Gemini 4 Hydrogen (Medium)',
+        tokens: Math.round(all * 0.68),
+        input: Math.round(inputAll * 0.68),
+        output: Math.round(output * 0.68),
+        pct: 68.0,
+        turns: Math.round(42 * f),
+        cost: totalCost * 0.56,
+        costPct: 56.0,
+        costPerTurn: (totalCost * 0.56) / Math.max(1, Math.round(42 * f)),
+        pricing: { label: 'Gemini Pro / 旗舰', input: 1.25, cacheRead: 0.3125, output: 10 },
+      },
+      {
+        modelName: 'Gemini 4 Flash',
+        tokens: Math.round(all * 0.22),
+        input: Math.round(inputAll * 0.22),
+        output: Math.round(output * 0.22),
+        pct: 22.0,
+        turns: Math.round(15 * f),
+        cost: totalCost * 0.12,
+        costPct: 12.0,
+        costPerTurn: (totalCost * 0.12) / Math.max(1, Math.round(15 * f)),
+        pricing: { label: 'Gemini Flash', input: 0.3, cacheRead: 0.075, output: 2.5 },
+      },
+      {
+        modelName: 'Claude 4.5 Sonnet',
+        tokens: Math.round(all * 0.10),
+        input: Math.round(inputAll * 0.10),
+        output: Math.round(output * 0.10),
+        pct: 10.0,
+        turns: Math.round(7 * f),
+        cost: totalCost * 0.32,
+        costPct: 32.0,
+        costPerTurn: (totalCost * 0.32) / Math.max(1, Math.round(7 * f)),
+        pricing: { label: 'Claude Sonnet', input: 3.0, cacheRead: 0.3, output: 15.0 },
+      },
+    ];
+    const mockConvs = [
+      { id: 'conv-mock-main-8f3a', title: '评价状态栏与侧边栏设计', modelName: 'Gemini 4 Hydrogen', turns: 14, cacheHitRate: 81.4, totalTokens: 1296000, cost: 1.45 * f, subagentCount: 2 },
+      { id: 'conv-mock-02', title: 'CDP 注入稳定性与重连排查', modelName: 'Claude 4.5 Sonnet', turns: 19, cacheHitRate: 76.8, totalTokens: 942000, cost: 1.62 * f, subagentCount: 1 },
+      { id: 'conv-mock-03', title: 'ECharts 矩形树图配色微调', modelName: 'Gemini 4 Flash', turns: 8, cacheHitRate: 84.0, totalTokens: 318000, cost: 0.17 * f, subagentCount: 0 },
+    ];
+    return {
+      conversations: Math.round(8 * f),
+      turns: Math.round(64 * f),
+      updatedAt: Date.now(),
+      totals: { all, inputAll, uncachedInput, cacheRead, output, thinking, response },
+      cache: { hitRate: (cacheRead / inputAll) * 100, savedInputTokens: cacheRead },
+      cost: {
+        total: totalCost,
+        input: inputCost,
+        cacheRead: cacheReadCost,
+        output: outputCost,
+        savedByCache,
+        avgPerConv: totalCost / Math.max(1, Math.round(8 * f)),
+        avgPerTurn: totalCost / Math.max(1, Math.round(64 * f)),
+        pricedTurns: Math.round(64 * f),
+        unpricedTurns: 0,
+      },
+      speed: { avgTokensPerSec: 74, avgTtftSec: 0.78 },
+      timeline: labels.map((label, i) => {
+        const w = 0.7 + (i % 3) * 0.25;
+        const cr = Math.round((cacheRead / labels.length) * w);
+        const ui = Math.round((uncachedInput / labels.length) * w);
+        const out = Math.round((output / labels.length) * w);
+        const cIn = (inputCost / labels.length) * w;
+        const cCr = (cacheReadCost / labels.length) * w;
+        const cOut = (outputCost / labels.length) * w;
+        return {
+          label,
+          turns: Math.round(12 * f * w),
+          cacheRead: cr,
+          uncachedInput: ui,
+          output: out,
+          total: cr + ui + out,
+          inputCost: cIn,
+          cacheReadCost: cCr,
+          outputCost: cOut,
+          cost: cIn + cCr + cOut,
+        };
+      }),
+      models: mockModels,
+      topConversations: mockConvs,
+      topCostConversations: mockConvs.slice().sort((a, b) => b.cost - a.cost),
+    };
+  }
+
+  function getMockPricingDefaults() {
+    return {
+      usdToCny: 6.67,
+      rules: [
+        { id: 'gemini-4-neon', label: 'Gemini 4 Neon', keywords: ['neon'], input: 3.0, cacheRead: 0.15, cacheWrite: 3.0, output: 15.0 },
+        { id: 'gemini-4-carbon', label: 'Gemini 4 Carbon', keywords: ['carbon'], input: 2.0, cacheRead: 0.1, cacheWrite: 2.0, output: 10.0 },
+        { id: 'gemini-4-argon', label: 'Gemini 4 Argon / Orchestrator', keywords: ['argon', 'orchestrator'], input: 2.0, cacheRead: 0.1, cacheWrite: 2.0, output: 10.0 },
+        { id: 'gemini-4-hydrogen', label: 'Gemini 4 Hydrogen', keywords: ['hydrogen'], input: 1.5, cacheRead: 0.075, cacheWrite: 1.5, output: 7.5 },
+        { id: 'gemini-flash-lite', label: 'Gemini Flash-Lite', keywords: ['flash-lite', 'flash_lite', 'flash lite'], input: 0.3, cacheRead: 0.03, cacheWrite: 0.3, output: 2.5 },
+        { id: 'gemini-flash', label: 'Gemini 3.8 Flash / Flash', keywords: ['flash'], input: 0.75, cacheRead: 0.075, cacheWrite: 0.75, output: 3.75 },
+        { id: 'gemini-pro', label: 'Gemini Pro', keywords: ['gemini-3', 'gemini 3', 'gemini-2', 'gemini 2', 'gemini pro'], input: 2.0, cacheRead: 0.2, cacheWrite: 2.0, output: 12.0 },
+        { id: 'claude-opus', label: 'Claude Opus 5.5', keywords: ['opus'], input: 4.0, cacheRead: 0.2, cacheWrite: 5.0, output: 20.0 },
+        { id: 'claude-sonnet', label: 'Claude Sonnet 5.5', keywords: ['sonnet'], input: 2.0, cacheRead: 0.1, cacheWrite: 2.5, output: 10.0 },
+        { id: 'claude-haiku', label: 'Claude Haiku 5.5', keywords: ['haiku'], input: 0.1, cacheRead: 0.01, cacheWrite: 0.125, output: 0.5 },
+        { id: 'gpt-mini', label: 'GPT-4o mini / o4-mini', keywords: ['4o-mini', 'o3-mini', 'o4-mini', 'gpt-5-mini'], input: 0.15, cacheRead: 0.075, cacheWrite: 0.15, output: 0.6 },
+        { id: 'gpt-flagship', label: 'GPT-4o / GPT-5 / o3', keywords: ['gpt-4o', 'gpt-5', 'o3'], input: 2.5, cacheRead: 1.25, cacheWrite: 2.5, output: 10.0 },
+      ],
+    };
+  }
+
+  function fmtCost(usd, { compact = false } = {}) {
+    const raw = Number(usd);
+    if (!Number.isFinite(raw) || raw < 0) return '-';
+    const sym = currency === 'CNY' ? '¥' : '$';
+    const v = currency === 'CNY' ? raw * usdToCny : raw;
+    if (v === 0) return `${sym}0`;
+    if (v < 0.001) return `<${sym}0.001`;
+    if (v < 0.01) return `${sym}${v.toFixed(4)}`;
+    if (v < 1) return `${sym}${v.toFixed(3)}`;
+    if (compact && v >= 1000) return `${sym}${(v / 1000).toFixed(2)}k`;
+    return `${sym}${v.toFixed(2)}`;
+  }
+
+  function convertCost(usd) {
+    const raw = Number(usd) || 0;
+    return currency === 'CNY' ? raw * usdToCny : raw;
+  }
 
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -550,7 +1207,7 @@
 
   function toneColor(pct) {
     if (pct >= 90) return 'var(--danger)';
-    if (pct >= 70) return 'var(--warn)';
+    if (pct >= 75) return 'var(--warn)';
     return 'var(--accent)';
   }
 
@@ -562,14 +1219,39 @@
     }
   }
 
+  function isDarkSurface() {
+    let dark = null;
+    const els = [document.body, document.documentElement];
+    for (const el of els) {
+      if (!el) continue;
+      const bg = getComputedStyle(el).backgroundColor || '';
+      const m = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+      if (m) {
+        const alpha = m[4] === undefined ? 1 : Number(m[4]);
+        if (alpha > 0.1) {
+          const lum = (0.299 * Number(m[1]) + 0.587 * Number(m[2]) + 0.114 * Number(m[3])) / 255;
+          dark = lum <= 0.5;
+          break;
+        }
+      }
+    }
+    if (dark === null) {
+      dark = Boolean(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    }
+    document.documentElement.classList.toggle('dark-surface', dark);
+    document.documentElement.classList.toggle('light-surface', !dark);
+    return dark;
+  }
+
   function getThemeColors() {
     const cs = getComputedStyle(document.documentElement);
-    const fg = cs.getPropertyValue('--fg').trim() || '#1f2328';
-    const dim = cs.getPropertyValue('--dim').trim() || '#656d76';
-    const line = cs.getPropertyValue('--line').trim() || 'rgba(128,128,128,0.16)';
-    const bg = cs.getPropertyValue('--bg').trim() || '#ffffff';
-    const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const isDark = isDarkSurface();
+    const fg = cs.getPropertyValue('--fg').trim() || (isDark ? '#e6edf3' : '#1f2328');
+    const dim = cs.getPropertyValue('--dim').trim() || (isDark ? '#8b949e' : '#656d76');
+    const line = cs.getPropertyValue('--line').trim() || (isDark ? 'rgba(255,255,255,0.12)' : 'rgba(128,128,128,0.16)');
+    const bg = cs.getPropertyValue('--bg').trim() || (isDark ? '#18181b' : '#ffffff');
     return {
+      isDark,
       fg,
       dim,
       line,
@@ -579,12 +1261,21 @@
     };
   }
 
+  function reduceMotion() {
+    return Boolean(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  }
+
   function initEChart(domId, option) {
     if (typeof window.echarts === 'undefined') return null;
     const el = document.getElementById(domId);
     if (!el) return null;
     const chart = window.echarts.init(el, null, { renderer: 'svg' });
-    chart.setOption(option);
+    chart.setOption({
+      animation: !reduceMotion() && pendingChartAnim,
+      animationDuration: 650,
+      animationEasing: 'cubicOut',
+      ...option,
+    });
     chartInstances.push(chart);
     return chart;
   }
@@ -600,16 +1291,11 @@
     const total = Number(toolTreemap?.totalTokens) || 0;
     if (groups.length === 0 || total <= 0) return '';
 
-    const stripHtml = `
-      <div class="tm-strip">
-        ${groups.map((g) => `<div style="width:${g.pct.toFixed(2)}%;background:${esc(g.color)}" title="${esc(g.name)}: ${fmtTok(g.tokens)} (${g.pct.toFixed(1)}%)"></div>`).join('')}
-      </div>
-    `;
-
     let bodyHtml = '';
+    const toolBodyAnim = pendingExpandAnim === 'tools' ? ' anim-reveal' : '';
     if (toolViewMode === 'list') {
       bodyHtml = `
-        <div class="sub-list" style="border:1px solid var(--line);border-radius:8px;overflow:hidden;">
+        <div class="sub-list${toolBodyAnim}" style="border:1px solid var(--line);border-radius:8px;overflow:hidden;">
           ${groups.map((g) => `
             <div class="model-row">
               <div class="model-bar-wrap">
@@ -624,19 +1310,8 @@
         </div>
       `;
     } else {
-      bodyHtml = '<div id="chart-tool-treemap" style="width:100%;height:184px;"></div>';
+      bodyHtml = `<div id="chart-tool-treemap" class="${toolBodyAnim.trim()}" style="width:100%;height:184px;"></div>`;
     }
-
-    const pillsHtml = `
-      <div class="tm-pills num">
-        ${groups.map((g) => `
-          <span class="tm-pill" title="${esc(g.name)}: ${fmtTok(g.tokens)} (${g.count}次)">
-            <span class="tm-pill-dot" style="background:${esc(g.color)}"></span>
-            <span>${esc(g.name)} ${g.pct.toFixed(1)}%</span>
-          </span>
-        `).join('')}
-      </div>
-    `;
 
     return `
       <div class="chart-card">
@@ -644,15 +1319,13 @@
           <span class="chart-title">工具调用 Token 构成</span>
           <div style="display:inline-flex;align-items:center;gap:6px;">
             <span class="dim num" style="font-size:10.5px;">${fmtTok(total)}</span>
-            <div class="seg-bar">
-              <button class="seg-btn ${toolViewMode === 'treemap' ? 'active' : ''}" data-tool-view="treemap" style="padding:2px 7px;font-size:10.5px;">矩形分布</button>
-              <button class="seg-btn ${toolViewMode === 'list' ? 'active' : ''}" data-tool-view="list" style="padding:2px 7px;font-size:10.5px;">归类占比</button>
+            <div class="seg-bar seg-sm" role="group" aria-label="工具构成视图">
+              <button type="button" class="seg-btn ${toolViewMode === 'treemap' ? 'active' : ''}" data-tool-view="treemap" aria-pressed="${toolViewMode === 'treemap'}">矩形分布</button>
+              <button type="button" class="seg-btn ${toolViewMode === 'list' ? 'active' : ''}" data-tool-view="list" aria-pressed="${toolViewMode === 'list'}">归类占比</button>
             </div>
           </div>
         </div>
-        ${stripHtml}
         ${bodyHtml}
-        ${pillsHtml}
       </div>
     `;
   }
@@ -743,12 +1416,15 @@
 
   function renderTimelineBarChart(timeline) {
     if (!Array.isArray(timeline) || timeline.length === 0) return '';
-    const maxTotal = Math.max(1, ...timeline.map((b) => b.total || 0));
+    const isCost = summaryMetric === 'cost';
+    const peakLabel = isCost
+      ? `峰值 ${fmtCost(Math.max(0, ...timeline.map((b) => Number(b.cost) || 0)))}`
+      : `峰值 ${fmtTok(Math.max(1, ...timeline.map((b) => b.total || 0)))}`;
     return `
       <div class="chart-card">
         <div class="chart-head">
-          <span class="chart-title">时段消耗趋势</span>
-          <span class="dim num" style="font-size:10.5px;">峰值 ${fmtTok(maxTotal)}</span>
+          <span class="chart-title">${isCost ? '时段费用趋势' : '时段消耗趋势'}</span>
+          <span class="dim num" style="font-size:10.5px;">${peakLabel}</span>
         </div>
         <div id="chart-timeline" style="width:100%;height:152px;"></div>
       </div>
@@ -759,6 +1435,14 @@
     if (!Array.isArray(timeline) || timeline.length === 0) return;
     const theme = getThemeColors();
     const labels = timeline.map((b) => b.label);
+    const isCost = summaryMetric === 'cost';
+    const sym = currency === 'CNY' ? '¥' : '$';
+    const fmtAxisCost = (v) => {
+      if (v === 0) return `${sym}0`;
+      if (v < 0.1) return `${sym}${v.toFixed(2)}`;
+      if (v < 10) return `${sym}${v.toFixed(1)}`;
+      return `${sym}${Math.round(v)}`;
+    };
 
     initEChart('chart-timeline', {
       tooltip: {
@@ -773,8 +1457,15 @@
           const idx = params?.[0]?.dataIndex ?? 0;
           const b = timeline[idx];
           if (!b) return '';
+          if (isCost) {
+            return `<div style="font-weight:600;margin-bottom:3px;">${esc(b.label)} · ${b.turns} 轮</div>`
+              + `<div>估算费用: <b>${fmtCost(b.cost)}</b> <span style="opacity:0.75;">(${fmtTok(b.total)})</span></div>`
+              + `<div><span style="color:#60a5fa">●</span> 缓存读取: ${fmtCost(b.cacheReadCost)}</div>`
+              + `<div><span style="color:#3b82f6">●</span> 新输入: ${fmtCost(b.inputCost)}</div>`
+              + `<div><span style="color:#f59e0b">●</span> 输出: ${fmtCost(b.outputCost)}</div>`;
+          }
           return `<div style="font-weight:600;margin-bottom:3px;">${esc(b.label)} · ${b.turns} 轮</div>`
-            + `<div>总计: <b>${fmtTok(b.total)}</b></div>`
+            + `<div>总计: <b>${fmtTok(b.total)}</b>${b.cost > 0 ? ` <span style="opacity:0.75;">(≈ ${fmtCost(b.cost)})</span>` : ''}</div>`
             + `<div><span style="color:#60a5fa">●</span> 缓存读取: ${fmtTok(b.cacheRead)}</div>`
             + `<div><span style="color:#3b82f6">●</span> 新输入: ${fmtTok(b.uncachedInput)}</div>`
             + `<div><span style="color:#f59e0b">●</span> 输出: ${fmtTok(b.output)}</div>`;
@@ -789,7 +1480,7 @@
         textStyle: { color: theme.dim, fontSize: 10.5 },
         data: ['缓存读取', '新输入', '输出'],
       },
-      grid: { top: 10, right: 8, bottom: 42, left: 42 },
+      grid: { top: 10, right: 8, bottom: 42, left: isCost ? 46 : 42 },
       xAxis: {
         type: 'category',
         data: labels,
@@ -800,7 +1491,11 @@
       yAxis: {
         type: 'value',
         splitNumber: 3,
-        axisLabel: { color: theme.dim, fontSize: 10, formatter: (v) => fmtTok(v) },
+        axisLabel: {
+          color: theme.dim,
+          fontSize: 10,
+          formatter: (v) => (isCost ? fmtAxisCost(v) : fmtTok(v)),
+        },
         splitLine: { lineStyle: { color: theme.line, type: 'dashed' } },
       },
       series: [
@@ -810,7 +1505,7 @@
           stack: 'tok',
           barMaxWidth: 22,
           itemStyle: { color: '#60a5fa' },
-          data: timeline.map((b) => b.cacheRead || 0),
+          data: timeline.map((b) => (isCost ? convertCost(b.cacheReadCost) : (b.cacheRead || 0))),
         },
         {
           name: '新输入',
@@ -818,7 +1513,7 @@
           stack: 'tok',
           barMaxWidth: 22,
           itemStyle: { color: '#3b82f6' },
-          data: timeline.map((b) => b.uncachedInput || 0),
+          data: timeline.map((b) => (isCost ? convertCost(b.inputCost) : (b.uncachedInput || 0))),
         },
         {
           name: '输出',
@@ -826,138 +1521,758 @@
           stack: 'tok',
           barMaxWidth: 22,
           itemStyle: { color: '#f59e0b', borderRadius: [3, 3, 0, 0] },
-          data: timeline.map((b) => b.output || 0),
+          data: timeline.map((b) => (isCost ? convertCost(b.outputCost) : (b.output || 0))),
         },
       ],
     });
   }
 
-  function renderDonutChart(totals) {
-    const total = Number(totals.all) || 0;
-    if (total <= 0) return '';
-    const segments = [
-      { label: '缓存读取', val: totals.cacheRead || 0, color: '#60a5fa' },
-      { label: '新输入', val: totals.uncachedInput || 0, color: '#3b82f6' },
-      { label: '输出', val: totals.output || 0, color: '#f59e0b' },
-    ].filter((s) => s.val > 0);
-
+  function renderMockBar() {
+    if (!mockMode) return '';
+    const scenarios = [
+      { id: 'normal', label: '正常 43%' },
+      { id: 'high', label: '预警 91%' },
+      { id: 'swarm', label: 'Swarm' },
+      { id: 'empty', label: '空会话' },
+      { id: 'error', label: '异常' },
+    ];
     return `
-      <div class="chart-card">
-        <div class="chart-head">
-          <span class="chart-title">Token 构成分布</span>
-          <span class="dim num" style="font-size:10.5px;">共 ${fmtTok(total)}</span>
+      <div class="mock-bar">
+        <span class="mock-tag">Mock 预览</span>
+        <div class="seg-bar seg-sm">
+          ${scenarios.map((s) => `<button class="seg-btn ${mockScenario === s.id ? 'active' : ''}" data-mock-scenario="${s.id}" aria-pressed="${mockScenario === s.id}">${s.label}</button>`).join('')}
         </div>
-        <div class="donut-wrap">
-          <div id="chart-donut" style="width:92px;height:92px;flex:none;"></div>
-          <div class="donut-rows num">
-            ${segments.map((s) => `
-              <div class="donut-row">
-                <span class="chart-leg-item"><span class="chart-leg-dot" style="background:${s.color}"></span>${s.label}</span>
-                <span><b>${fmtTok(s.val)}</b> <span class="dim">${((s.val / total) * 100).toFixed(1)}%</span></span>
-              </div>
-            `).join('')}
+      </div>
+    `;
+  }
+
+  function renderErrBanner() {
+    if (!lastFetchError) return '';
+    return `
+      <div class="err-banner" role="alert">
+        <span>刷新失败：${esc(lastFetchError)}</span>
+        <button id="btn-retry-inline" class="hero-alert-btn" type="button">重试</button>
+      </div>
+    `;
+  }
+
+  function renderErrorCard(title, detail) {
+    const canOfferMock = !mockMode && !(window.sidecar && window.sidecar.fetch);
+    return `
+      <div class="empty-card" role="alert">
+        <div class="empty-card-title">${esc(title)}</div>
+        <div class="empty-card-desc">${esc(detail || '请确认语言服务器已启动且扩展端口正常连接。')}</div>
+        <div class="empty-card-actions">
+          <button id="btn-retry" class="icon-btn" type="button">重试连接</button>
+          ${canOfferMock ? '<button id="btn-enable-mock" class="icon-btn" type="button">使用 Mock 数据预览</button>' : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderTopBar(extraRightHtml = '') {
+    const isSettings = viewMode === 'settings';
+    return `
+      <div class="header">
+        <div class="seg-bar" role="tablist" aria-label="视图切换">
+          <button type="button" class="seg-btn ${viewMode === 'session' ? 'active' : ''}" data-view="session" role="tab" aria-selected="${viewMode === 'session'}" tabindex="${viewMode === 'session' ? '0' : '-1'}">当前会话</button>
+          <button type="button" class="seg-btn ${viewMode === 'summary' ? 'active' : ''}" data-view="summary" role="tab" aria-selected="${viewMode === 'summary'}" tabindex="${viewMode === 'summary' ? '0' : '-1'}">全局统计</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          ${extraRightHtml}
+          <button id="btn-pricing-settings" class="icon-btn ${isSettings ? 'active' : ''}" type="button" title="模型单价与汇率设置" aria-pressed="${isSettings}">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="8" cy="8" r="2.2"/>
+              <path d="M13.2 9.6a1.1 1.1 0 0 0 .22 1.2l.04.04a1.33 1.33 0 1 1-1.88 1.88l-.04-.04a1.1 1.1 0 0 0-1.2-.22 1.1 1.1 0 0 0-.67 1v.12a1.33 1.33 0 1 1-2.66 0v-.06a1.1 1.1 0 0 0-.72-1 1.1 1.1 0 0 0-1.2.22l-.04.04a1.33 1.33 0 1 1-1.88-1.88l.04-.04a1.1 1.1 0 0 0 .22-1.2 1.1 1.1 0 0 0-1-.67h-.12a1.33 1.33 0 1 1 0-2.66h.06a1.1 1.1 0 0 0 1-.72 1.1 1.1 0 0 0-.22-1.2l-.04-.04a1.33 1.33 0 1 1 1.88-1.88l.04.04a1.1 1.1 0 0 0 1.2.22h.05a1.1 1.1 0 0 0 .67-1v-.12a1.33 1.33 0 1 1 2.66 0v.06a1.1 1.1 0 0 0 .67 1 1.1 1.1 0 0 0 1.2-.22l.04-.04a1.33 1.33 0 1 1 1.88 1.88l-.04.04a1.1 1.1 0 0 0-.22 1.2v.05a1.1 1.1 0 0 0 1 .67h.12a1.33 1.33 0 1 1 0 2.66h-.06a1.1 1.1 0 0 0-1 .67Z"/>
+            </svg>
+          </button>
+          ${isSettings ? '' : `
+            <button id="btn-refresh" class="icon-btn" type="button" title="${viewMode === 'summary' ? '手动刷新全局统计（自动刷新间隔 60s，快捷键 R）' : '立即刷新当前会话（快捷键 R）'}">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M13.5 8a5.5 5.5 0 1 1-1.4-3.65"/>
+                <path d="M13.5 2.5v2.75h-2.75"/>
+              </svg>
+              <span>${viewMode === 'summary' ? '手动刷新' : '刷新'}</span>
+            </button>
+          `}
+        </div>
+      </div>
+      ${renderMockBar()}
+    `;
+  }
+
+  function renderSummaryFiltersHtml() {
+    const ranges = [
+      { id: 'today', label: '今天' },
+      { id: '7d', label: '近 7 天' },
+      { id: '30d', label: '近 30 天' },
+      { id: 'all', label: '全部' },
+    ];
+    return `
+      <div class="filter-bar">
+        <div class="filter-row">
+          <div class="seg-bar seg-sm" role="group" aria-label="统计范围">
+            <button type="button" class="seg-btn ${summaryScope === 'workspace' ? 'active' : ''}" data-scope="workspace" aria-pressed="${summaryScope === 'workspace'}">当前工作区</button>
+            <button type="button" class="seg-btn ${summaryScope === 'all' ? 'active' : ''}" data-scope="all" aria-pressed="${summaryScope === 'all'}">全部</button>
+          </div>
+          <div class="seg-bar seg-sm" role="group" aria-label="时间范围">
+            ${ranges.map((r) => `<button type="button" class="seg-btn ${summaryRange === r.id ? 'active' : ''}" data-range="${r.id}" aria-pressed="${summaryRange === r.id}">${r.label}</button>`).join('')}
+          </div>
+        </div>
+        <div class="filter-row">
+          <div class="seg-bar seg-sm" role="group" aria-label="统计维度">
+            <button type="button" class="seg-btn ${summaryMetric === 'tokens' ? 'active' : ''}" data-metric="tokens" aria-pressed="${summaryMetric === 'tokens'}">Token 用量</button>
+            <button type="button" class="seg-btn ${summaryMetric === 'cost' ? 'active' : ''}" data-metric="cost" aria-pressed="${summaryMetric === 'cost'}">费用估算</button>
+          </div>
+          <div class="seg-bar seg-sm" role="group" aria-label="货币单位" title="切换费用估算展示货币（当前汇率 1 USD = ${usdToCny} CNY）">
+            <button type="button" class="seg-btn ${currency === 'USD' ? 'active' : ''}" data-currency="USD" aria-pressed="${currency === 'USD'}">$ USD</button>
+            <button type="button" class="seg-btn ${currency === 'CNY' ? 'active' : ''}" data-currency="CNY" aria-pressed="${currency === 'CNY'}">¥ CNY</button>
           </div>
         </div>
       </div>
     `;
   }
 
-  function mountDonutChart(totals) {
-    const total = Number(totals?.all) || 0;
-    if (total <= 0) return;
-    const theme = getThemeColors();
-    const data = [
-      { name: '缓存读取', value: totals.cacheRead || 0, itemStyle: { color: '#60a5fa' } },
-      { name: '新输入', value: totals.uncachedInput || 0, itemStyle: { color: '#3b82f6' } },
-      { name: '输出', value: totals.output || 0, itemStyle: { color: '#f59e0b' } },
-    ].filter((d) => d.value > 0);
-
-    initEChart('chart-donut', {
-      tooltip: {
-        trigger: 'item',
-        confine: true,
-        backgroundColor: theme.tooltipBg,
-        borderColor: theme.tooltipBorder,
-        borderWidth: 1,
-        textStyle: { color: theme.fg, fontSize: 11 },
-        formatter: (p) => `${esc(p.name)}<br/><b>${fmtTok(p.value)}</b> (${Number(p.percent || 0).toFixed(1)}%)`,
-      },
-      title: {
-        text: fmtTok(total),
-        left: 'center',
-        top: 'center',
-        textStyle: { color: theme.fg, fontSize: 12, fontWeight: 700 },
-      },
-      series: [{
-        type: 'pie',
-        radius: ['58%', '86%'],
-        center: ['50%', '50%'],
-        padAngle: 2,
-        itemStyle: { borderRadius: 4 },
-        label: { show: false },
-        emphasis: { scale: true, scaleSize: 3 },
-        data,
-      }],
-    });
-  }
-
-  function renderTopBar(extraRightHtml = '') {
-    return `
-      <div class="header">
-        <div class="seg-bar">
-          <button class="seg-btn ${viewMode === 'session' ? 'active' : ''}" data-view="session">当前会话</button>
-          <button class="seg-btn ${viewMode === 'summary' ? 'active' : ''}" data-view="summary">全局统计</button>
-        </div>
-        <div style="display:flex;align-items:center;gap:6px;">
-          ${extraRightHtml}
-          <button id="btn-refresh" class="icon-btn" title="${viewMode === 'summary' ? '手动刷新全局统计（自动刷新间隔 60s）' : '立即刷新当前会话'}">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M13.5 8a5.5 5.5 0 1 1-1.4-3.65"/>
-              <path d="M13.5 2.5v2.75h-2.75"/>
-            </svg>
-            <span>${viewMode === 'summary' ? '手动刷新' : '刷新'}</span>
-          </button>
-        </div>
-      </div>
-    `;
-  }
-
-  function bindGlobalEvents(hostCid) {
-    appEl.querySelectorAll('.seg-btn[data-view]').forEach((btn) => {
+  function bindSummaryFilters(root = appEl) {
+    root.querySelectorAll('.seg-btn[data-scope]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        const next = btn.getAttribute('data-view');
-        if (!next || next === viewMode) return;
-        viewMode = next;
-        if (viewMode === 'summary') {
-          lastSummaryPayload = '';
-        } else {
-          lastSessionPayload = '';
-        }
+        const next = btn.getAttribute('data-scope');
+        if (!next || next === summaryScope) return;
+        summaryScope = next;
+        lastSummary = null;
+        lastSummaryPayload = '';
+        saveUiState();
+        beginViewTransition({ mode: 'summary', direction: 'fade' });
         resetPollTimer();
         refresh(true);
       });
     });
-    document.getElementById('btn-refresh')?.addEventListener('click', () => {
+    root.querySelectorAll('.seg-btn[data-range]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const next = btn.getAttribute('data-range');
+        if (!next || next === summaryRange) return;
+        summaryRange = next;
+        lastSummary = null;
+        lastSummaryPayload = '';
+        saveUiState();
+        beginViewTransition({ mode: 'summary', direction: 'fade' });
+        resetPollTimer();
+        refresh(true);
+      });
+    });
+    root.querySelectorAll('.seg-btn[data-metric]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const next = btn.getAttribute('data-metric');
+        if (!next || next === summaryMetric) return;
+        summaryMetric = next;
+        saveUiState();
+        if (lastSummary && !lastSummary.error && !activeTransition) {
+          pendingChartAnim = true;
+          renderSummary(lastSummary);
+        } else {
+          root.querySelectorAll('.seg-btn[data-metric]').forEach((b) => {
+            const active = b.getAttribute('data-metric') === summaryMetric;
+            b.classList.toggle('active', active);
+            b.setAttribute('aria-pressed', String(active));
+          });
+        }
+      });
+    });
+    root.querySelectorAll('.seg-btn[data-currency]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const next = btn.getAttribute('data-currency');
+        if (!next || next === currency) return;
+        currency = next;
+        saveUiState();
+        if (lastSummary && !lastSummary.error && !activeTransition) {
+          renderSummary(lastSummary);
+        } else {
+          root.querySelectorAll('.seg-btn[data-currency]').forEach((b) => {
+            const active = b.getAttribute('data-currency') === currency;
+            b.classList.toggle('active', active);
+            b.setAttribute('aria-pressed', String(active));
+          });
+        }
+      });
+    });
+  }
+
+  function renderSkeletonInnerHtml(mode = viewMode) {
+    const skelBento = `
+      <div class="bento">
+        ${Array.from({ length: 4 }, () => `
+          <div class="kpi">
+            <div class="kpi-head">
+              <span class="skel skel-line" style="width:52%;"></span>
+              <span class="skel skel-tag"></span>
+            </div>
+            <div class="kpi-val"><span class="skel skel-val"></span></div>
+            <div class="kpi-sub"><span class="skel skel-line" style="width:76%;"></span></div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+
+    if (mode === 'settings') {
+      return `
+        <div class="settings-card">
+          <div class="skel skel-line" style="width:110px;margin-bottom:10px;"></div>
+          <div class="skel skel-line" style="width:100%;height:26px;"></div>
+        </div>
+        <div class="settings-card">
+          <div class="skel skel-line" style="width:160px;margin-bottom:10px;"></div>
+          ${Array.from({ length: 4 }, () => `
+            <div class="price-rule" style="margin-bottom:8px;">
+              <div class="skel skel-line" style="width:72%;height:22px;margin-bottom:8px;"></div>
+              <div class="skel skel-line" style="width:100%;height:24px;"></div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    if (mode === 'summary') {
+      return `
+        ${renderSummaryFiltersHtml()}
+        ${skelBento}
+        <div class="chart-card">
+          <div class="chart-head">
+            <span class="skel skel-line" style="width:78px;"></span>
+            <span class="skel skel-line" style="width:56px;"></span>
+          </div>
+          <div class="skel skel-chart"></div>
+        </div>
+        <div class="sub-card">
+          <div class="card-head">
+            <span class="skel skel-line" style="width:72px;"></span>
+            <span class="skel skel-line" style="width:46px;"></span>
+          </div>
+          <div class="sub-list">
+            ${Array.from({ length: 3 }, () => `
+              <div class="model-row">
+                <div class="model-bar-wrap">
+                  <div class="model-bar-top">
+                    <span class="skel skel-line" style="width:46%;"></span>
+                    <span class="skel skel-line" style="width:28%;"></span>
+                  </div>
+                  <div class="model-bar"><div class="skel" style="width:100%;height:100%;"></div></div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    const skelDots = Array.from({ length: 100 }, () => '<span class="ctx-dot"></span>').join('');
+    return `
+      <div class="session-head">
+        <div class="skel skel-badge" style="width:146px;"></div>
+        <div class="skel skel-line" style="width:96px;"></div>
+      </div>
+      <div class="hero">
+        <div class="hero-top">
+          <span class="skel skel-line" style="width:140px;"></span>
+          <span class="skel skel-pill" style="width:48px;"></span>
+        </div>
+        <div class="hero-nums">
+          <span class="skel skel-hero-num"></span>
+        </div>
+        <div class="dot-grid" aria-hidden="true">${skelDots}</div>
+        <div class="cat-list">
+          ${Array.from({ length: 4 }, () => `
+            <div class="cat-row">
+              <span class="cat-mark" style="background:var(--empty-dot);"></span>
+              <span class="skel skel-line" style="width:58%;"></span>
+              <span class="skel skel-line" style="width:34px;"></span>
+              <span class="skel skel-line" style="width:32px;"></span>
+            </div>
+          `).join('')}
+          <div class="cat-row">
+            <span class="cat-mark free"></span>
+            <span class="skel skel-line" style="width:44%;"></span>
+            <span class="skel skel-line" style="width:36px;"></span>
+            <span class="skel skel-line" style="width:32px;"></span>
+          </div>
+        </div>
+      </div>
+      ${skelBento}
+    `;
+  }
+
+  const STAGE_EXIT_MS = 150;
+  const STAGE_FADE_EXIT_MS = 120;
+  const MIN_SKEL_MS = 360;
+  const CROSSFADE_OUT_MS = 220;
+
+  let transitionToken = 0;
+  let activeTransition = null;
+  let pendingTabFocus = false;
+
+  function sleep(ms) {
+    return ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve();
+  }
+
+  function ensureShell() {
+    let topBar = document.getElementById('top-bar');
+    let stage = document.getElementById('view-stage');
+    if (!topBar || !stage) {
+      appEl.innerHTML = '<div id="top-bar"></div><div id="view-stage" class="view-stage"></div>';
+      topBar = document.getElementById('top-bar');
+      stage = document.getElementById('view-stage');
+    }
+    return { topBar, stage };
+  }
+
+  function syncTopBar() {
+    const { topBar } = ensureShell();
+    topBar.innerHTML = renderTopBar();
+    bindTopBarEvents(topBar);
+    restoreTabFocus();
+  }
+
+  function mountSkeletonLayer(mode, enterClass) {
+    const { stage } = ensureShell();
+    stage.setAttribute('aria-busy', 'true');
+    stage.setAttribute('aria-label', mode === 'summary' ? '正在加载全局统计' : '正在加载会话数据');
+
+    const layer = document.createElement('div');
+    layer.className = `stage-layer stage-skeleton${enterClass ? ' ' + enterClass : ''}`;
+    layer.innerHTML = renderSkeletonInnerHtml(mode);
+    stage.replaceChildren(layer);
+    if (mode === 'summary') {
+      bindSummaryFilters(layer);
+    }
+  }
+
+  function beginViewTransition({ mode = viewMode, direction = 'forward', skipExit = false } = {}) {
+    disposeCharts();
+    syncTopBar();
+    setRefreshBtnLoading(true);
+    pendingChartAnim = true;
+
+    const token = ++transitionToken;
+    const { stage } = ensureShell();
+    stage.querySelectorAll('.skel-crossfade-out').forEach((el) => el.remove());
+
+    const noMotion = reduceMotion();
+    const currentLayer = stage.querySelector('.stage-layer');
+    const shouldExit = !skipExit && !noMotion && Boolean(currentLayer);
+    const exitMs = direction === 'fade' ? STAGE_FADE_EXIT_MS : STAGE_EXIT_MS;
+
+    const readyPromise = (async () => {
+      if (shouldExit) {
+        currentLayer.classList.remove('enter-forward', 'enter-backward', 'enter-fade', 'data-crossfade-in');
+        currentLayer.classList.add(`exit-${direction}`);
+        await sleep(exitMs);
+        if (token !== transitionToken) return;
+      }
+
+      const enterClass = noMotion ? '' : (skipExit ? 'enter-fade' : `enter-${direction}`);
+      mountSkeletonLayer(mode, enterClass);
+
+      if (!noMotion) {
+        await sleep(MIN_SKEL_MS);
+      }
+    })();
+
+    activeTransition = { token, readyPromise };
+  }
+
+  async function waitForTransitionReady(seq) {
+    const t = activeTransition;
+    if (t) {
+      await t.readyPromise;
+      if (seq !== refreshSeq || t.token !== transitionToken) return false;
+      if (activeTransition === t) activeTransition = null;
+    }
+    return seq === refreshSeq;
+  }
+
+  function switchView(next) {
+    if (!next || next === viewMode) return;
+    const prev = viewMode;
+    if (prev !== 'settings') previousViewMode = prev;
+    const direction = next === 'settings'
+      ? 'forward'
+      : (prev === 'settings' ? 'backward' : (next === 'summary' ? 'forward' : 'backward'));
+    viewMode = next;
+    if (viewMode !== 'settings') saveUiState();
+    lastFetchError = '';
+    pricingStatusMsg = '';
+    pricingStatusErr = false;
+    if (viewMode === 'summary') {
+      lastSummaryPayload = '';
+    } else if (viewMode === 'session') {
+      lastSessionPayload = '';
+      lastAnimatedSessionId = '';
+    }
+    beginViewTransition({ mode: viewMode, direction });
+    resetPollTimer();
+    refresh(true);
+  }
+
+  function commitViewContent(innerHtml) {
+    const { stage } = ensureShell();
+    stage.querySelectorAll('.skel-crossfade-out').forEach((el) => el.remove());
+
+    const skelLayer = stage.querySelector('.stage-layer.stage-skeleton');
+    const contentLayer = document.createElement('div');
+    contentLayer.className = 'stage-layer stage-content';
+    contentLayer.innerHTML = innerHtml;
+
+    stage.removeAttribute('aria-busy');
+    stage.removeAttribute('aria-label');
+
+    if (skelLayer && !reduceMotion()) {
+      skelLayer.classList.remove('stage-skeleton', 'enter-forward', 'enter-backward', 'enter-fade');
+      skelLayer.classList.add('skel-crossfade-out');
+      skelLayer.setAttribute('aria-hidden', 'true');
+      contentLayer.classList.add('data-crossfade-in');
+      stage.appendChild(contentLayer);
+      setTimeout(() => {
+        if (skelLayer.isConnected) skelLayer.remove();
+      }, CROSSFADE_OUT_MS + 40);
+    } else {
+      stage.replaceChildren(contentLayer);
+    }
+
+    bindStageActionEvents(contentLayer);
+    return contentLayer;
+  }
+
+  function restoreTabFocus() {
+    if (!pendingTabFocus) return;
+    pendingTabFocus = false;
+    const activeTab = appEl.querySelector('.seg-bar[role="tablist"] [role="tab"][aria-selected="true"]');
+    activeTab?.focus();
+  }
+
+  function bindTopBarEvents(topBar) {
+    const viewTabs = Array.from(topBar.querySelectorAll('.seg-btn[data-view][role="tab"]'));
+    viewTabs.forEach((btn, idx) => {
+      btn.addEventListener('click', () => {
+        switchView(btn.getAttribute('data-view'));
+      });
+      btn.addEventListener('keydown', (e) => {
+        let targetIdx = -1;
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+          targetIdx = (idx + 1) % viewTabs.length;
+        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+          targetIdx = (idx - 1 + viewTabs.length) % viewTabs.length;
+        } else if (e.key === 'Home') {
+          targetIdx = 0;
+        } else if (e.key === 'End') {
+          targetIdx = viewTabs.length - 1;
+        }
+        if (targetIdx < 0) return;
+        e.preventDefault();
+        const target = viewTabs[targetIdx];
+        pendingTabFocus = true;
+        target.focus();
+        switchView(target.getAttribute('data-view'));
+      });
+    });
+    topBar.querySelectorAll('.seg-btn[data-mock-scenario]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const next = btn.getAttribute('data-mock-scenario');
+        if (!next) return;
+        mockScenario = next;
+        selectedConversationId = '';
+        expandedTurns.clear();
+        pendingChartAnim = true;
+        currentPage = 1;
+        lastData = null;
+        lastSummary = null;
+        lastFetchError = '';
+        lastSessionPayload = '';
+        lastSummaryPayload = '';
+        lastAnimatedSessionId = '';
+        beginViewTransition({ mode: viewMode, direction: 'fade' });
+        refresh(true);
+      });
+    });
+    topBar.querySelector('#btn-pricing-settings')?.addEventListener('click', () => {
+      if (viewMode === 'settings') {
+        switchView(previousViewMode || 'summary');
+      } else {
+        switchView('settings');
+      }
+    });
+    topBar.querySelector('#btn-refresh')?.addEventListener('click', () => {
       resetPollTimer();
       refresh(true);
     });
   }
 
+  function bindStageActionEvents(root) {
+    root.querySelector('#btn-retry')?.addEventListener('click', () => {
+      resetPollTimer();
+      refresh(true);
+    });
+    root.querySelector('#btn-retry-inline')?.addEventListener('click', () => {
+      resetPollTimer();
+      refresh(true);
+    });
+    root.querySelector('#btn-enable-mock')?.addEventListener('click', () => {
+      mockMode = true;
+      mockScenario = 'normal';
+      lastFetchError = '';
+      lastSessionPayload = '';
+      lastSummaryPayload = '';
+      lastAnimatedSessionId = '';
+      beginViewTransition({ mode: viewMode, direction: 'fade' });
+      refresh(true);
+    });
+  }
+
+  function collectPricingDraftFromDom(root) {
+    const rateInput = root.querySelector('#input-usd-cny');
+    const rateVal = Number(rateInput?.value);
+    const nextRate = Number.isFinite(rateVal) && rateVal > 0 ? rateVal : usdToCny;
+    const ruleEls = Array.from(root.querySelectorAll('.price-rule[data-rule-idx]'));
+    const rules = ruleEls.map((el, idx) => {
+      const label = el.querySelector('[data-field="label"]')?.value?.trim() || '';
+      const kwRaw = el.querySelector('[data-field="keywords"]')?.value || '';
+      const keywords = kwRaw.split(/[,，]/).map((k) => k.trim().toLowerCase()).filter(Boolean);
+      const numVal = (field) => {
+        const v = Number(el.querySelector(`[data-field="${field}"]`)?.value);
+        return Number.isFinite(v) && v >= 0 ? v : 0;
+      };
+      const id = el.getAttribute('data-rule-id') || `custom-${Date.now()}-${idx}`;
+      return {
+        id,
+        label: label || keywords[0] || `自定义模型 ${idx + 1}`,
+        keywords,
+        input: numVal('input'),
+        cacheRead: numVal('cacheRead'),
+        cacheWrite: numVal('cacheWrite'),
+        output: numVal('output'),
+      };
+    }).filter((r) => r.keywords.length > 0);
+    return { usdToCny: nextRate, rules };
+  }
+
+  function renderSettings(config) {
+    disposeCharts();
+    pricingDraft = {
+      usdToCny: Number(config?.usdToCny) > 0 ? Number(config.usdToCny) : usdToCny,
+      rules: Array.isArray(config?.rules)
+        ? config.rules.map((r) => ({ ...r, keywords: Array.isArray(r.keywords) ? [...r.keywords] : [] }))
+        : getMockPricingDefaults().rules,
+    };
+
+    const contentLayer = commitViewContent(`
+      <div class="back-bar">
+        <span style="font-weight:600;color:var(--fg);">单价与汇率设置</span>
+        <button id="btn-settings-back" class="back-btn" type="button">← 返回${previousViewMode === 'session' ? '当前会话' : '全局统计'}</button>
+      </div>
+
+      <div class="settings-card">
+        <div class="chart-head" style="margin-bottom:6px;">
+          <span class="chart-title">货币汇率</span>
+          <span id="rate-preview" class="dim num" style="font-size:11px;">1 USD = ${pricingDraft.usdToCny} CNY</span>
+        </div>
+        <div class="rate-row">
+          <span class="dim" style="font-size:11.5px;">USD → CNY 换算汇率</span>
+          <div class="rate-input-wrap">
+            <input id="input-usd-cny" class="field-input num" type="number" step="0.01" min="0.01" value="${esc(pricingDraft.usdToCny)}" style="width:92px;text-align:right;">
+            <span class="dim" style="font-size:11px;">CNY</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-card">
+        <div class="chart-head">
+          <span class="chart-title">模型参考单价（USD / 1M tokens）</span>
+          <button id="btn-add-price-rule" class="icon-btn" type="button" style="height:23px;padding:0 8px;font-size:11px;">+ 新增规则</button>
+        </div>
+        <p class="settings-note">按从上到下顺序匹配模型名关键词（多个关键词用英文逗号分隔）。自定义规则会自动置顶，可覆盖下方默认档位。</p>
+        <div class="price-rule-list">
+          ${pricingDraft.rules.map((r, idx) => `
+            <div class="price-rule" data-rule-idx="${idx}" data-rule-id="${esc(r.id || '')}">
+              <div class="price-rule-head">
+                <input class="field-input" data-field="label" type="text" placeholder="显示名称" value="${esc(r.label)}" aria-label="模型显示名称">
+                <input class="field-input" data-field="keywords" type="text" placeholder="匹配关键词，如 argon, orchestrator" value="${esc((r.keywords || []).join(', '))}" aria-label="匹配关键词">
+                <button class="price-rule-del" type="button" data-del-idx="${idx}" title="删除此规则" aria-label="删除规则">×</button>
+              </div>
+              <div class="price-grid">
+                <div class="price-field">
+                  <label>输入 ($/1M)</label>
+                  <input class="field-input num" data-field="input" type="number" step="0.01" min="0" value="${esc(r.input)}">
+                </div>
+                <div class="price-field">
+                  <label>缓存读</label>
+                  <input class="field-input num" data-field="cacheRead" type="number" step="0.005" min="0" value="${esc(r.cacheRead)}">
+                </div>
+                <div class="price-field">
+                  <label>缓存写</label>
+                  <input class="field-input num" data-field="cacheWrite" type="number" step="0.01" min="0" value="${esc(r.cacheWrite)}">
+                </div>
+                <div class="price-field">
+                  <label>输出 ($/1M)</label>
+                  <input class="field-input num" data-field="output" type="number" step="0.01" min="0" value="${esc(r.output)}">
+                </div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+
+        <div class="settings-actions">
+          <div style="display:flex;gap:6px;">
+            <button id="btn-save-pricing" class="icon-btn primary" type="button">保存配置</button>
+            <button id="btn-reset-pricing" class="icon-btn" type="button">恢复默认</button>
+          </div>
+          <span id="pricing-status" class="settings-status ${pricingStatusErr ? 'err' : ''}">${esc(pricingStatusMsg)}</span>
+        </div>
+      </div>
+    `);
+
+    const setStatus = (msg, isErr = false) => {
+      pricingStatusMsg = msg;
+      pricingStatusErr = isErr;
+      const el = contentLayer.querySelector('#pricing-status');
+      if (el) {
+        el.textContent = msg;
+        el.classList.toggle('err', isErr);
+      }
+    };
+
+    contentLayer.querySelector('#btn-settings-back')?.addEventListener('click', () => {
+      switchView(previousViewMode || 'summary');
+    });
+
+    contentLayer.querySelector('#input-usd-cny')?.addEventListener('input', (e) => {
+      const v = Number(e.target.value);
+      const preview = contentLayer.querySelector('#rate-preview');
+      if (preview && Number.isFinite(v) && v > 0) {
+        preview.textContent = `1 USD = ${v} CNY`;
+      }
+    });
+
+    contentLayer.querySelector('#btn-add-price-rule')?.addEventListener('click', () => {
+      const current = collectPricingDraftFromDom(contentLayer);
+      current.rules.unshift({
+        id: `custom-${Date.now()}`,
+        label: '自定义模型',
+        keywords: ['my-model'],
+        input: 1.0,
+        cacheRead: 0.1,
+        cacheWrite: 1.0,
+        output: 5.0,
+      });
+      pricingStatusMsg = '';
+      pricingStatusErr = false;
+      renderSettings(current);
+    });
+
+    contentLayer.querySelectorAll('.price-rule-del[data-del-idx]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.getAttribute('data-del-idx'));
+        const current = collectPricingDraftFromDom(contentLayer);
+        if (current.rules.length <= 1) {
+          setStatus('至少保留一条规则', true);
+          return;
+        }
+        current.rules.splice(idx, 1);
+        pricingStatusMsg = '';
+        pricingStatusErr = false;
+        renderSettings(current);
+      });
+    });
+
+    contentLayer.querySelector('#btn-save-pricing')?.addEventListener('click', async () => {
+      const next = collectPricingDraftFromDom(contentLayer);
+      if (!next.rules.length) {
+        setStatus('请至少填写一条有效关键词规则', true);
+        return;
+      }
+      if (mockMode) {
+        usdToCny = next.usdToCny;
+        pricingDraft = next;
+        lastSummary = null;
+        lastSummaryPayload = '';
+        lastSessionPayload = '';
+        setStatus('已保存（Mock 模式）');
+        return;
+      }
+      try {
+        setStatus('正在保存…');
+        const res = await doFetch('/api/pricing', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(next),
+        });
+        const data = await res.json();
+        if (!res.ok || data?.error) throw new Error(data?.message || `HTTP ${res.status}`);
+        usdToCny = Number(data.config?.usdToCny) || next.usdToCny;
+        pricingDraft = data.config || next;
+        lastSummary = null;
+        lastSummaryPayload = '';
+        lastSessionPayload = '';
+        setStatus('已保存，返回后立即按新单价重算');
+      } catch (err) {
+        setStatus(`保存失败：${err.message || '未知错误'}`, true);
+      }
+    });
+
+    contentLayer.querySelector('#btn-reset-pricing')?.addEventListener('click', async () => {
+      if (mockMode) {
+        const def = getMockPricingDefaults();
+        usdToCny = def.usdToCny;
+        lastSummary = null;
+        lastSummaryPayload = '';
+        lastSessionPayload = '';
+        pricingStatusMsg = '已恢复默认配置';
+        pricingStatusErr = false;
+        renderSettings(def);
+        return;
+      }
+      try {
+        setStatus('正在恢复默认…');
+        const res = await doFetch('/api/pricing/reset', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok || data?.error) throw new Error(data?.message || `HTTP ${res.status}`);
+        usdToCny = Number(data.config?.usdToCny) || 6.67;
+        lastSummary = null;
+        lastSummaryPayload = '';
+        lastSessionPayload = '';
+        pricingStatusMsg = '已恢复最新官方参考价与汇率';
+        pricingStatusErr = false;
+        renderSettings(data.config || getMockPricingDefaults());
+      } catch (err) {
+        setStatus(`恢复失败：${err.message || '未知错误'}`, true);
+      }
+    });
+  }
+
   function renderSummary(summary) {
     disposeCharts();
-    lastSummary = summary;
     const hostCid = activeSidecarConversation();
     if (!summary || summary.error) {
-      appEl.innerHTML = `${renderTopBar()}<p class="empty">加载失败：${esc(summary?.message || summary?.error || '未知错误')}</p>`;
-      bindGlobalEvents(hostCid);
+      commitViewContent(renderErrorCard('全局统计加载失败', summary?.message || summary?.error || '未知错误'));
       return;
     }
+    if (Number(summary.cost?.usdToCny) > 0) {
+      usdToCny = Number(summary.cost.usdToCny);
+    }
+    lastSummary = summary;
 
     const totals = summary.totals || {};
     const cache = summary.cache || {};
+    const cost = summary.cost || {};
     const speed = summary.speed || {};
-    const models = Array.isArray(summary.models) ? summary.models : [];
-    const topConvs = Array.isArray(summary.topConversations) ? summary.topConversations : [];
+    const isCost = summaryMetric === 'cost';
+    const rawModels = Array.isArray(summary.models) ? summary.models : [];
+    const models = isCost
+      ? rawModels.slice().sort((a, b) => (b.cost || 0) - (a.cost || 0) || (b.tokens || 0) - (a.tokens || 0))
+      : rawModels;
+    const rawTopConvs = Array.isArray(summary.topConversations) ? summary.topConversations : [];
+    const topConvs = isCost
+      ? (Array.isArray(summary.topCostConversations) && summary.topCostConversations.length > 0
+          ? summary.topCostConversations
+          : rawTopConvs.slice().sort((a, b) => (b.cost || 0) - (a.cost || 0)))
+      : rawTopConvs;
     const ranges = [
       { id: 'today', label: '今天' },
       { id: '7d', label: '近 7 天' },
@@ -965,36 +2280,49 @@
       { id: 'all', label: '全部' },
     ];
     const updatedTime = summary.updatedAt ? new Date(summary.updatedAt).toLocaleTimeString('zh-CN', { hour12: false }) : '';
+    const totalCostVal = Number(cost.total) || 0;
+    const inputCostTotal = (Number(cost.input) || 0) + (Number(cost.cacheRead) || 0);
+    const inputCostPct = totalCostVal > 0 ? (inputCostTotal / totalCostVal) * 100 : 0;
+    const outputCostPct = totalCostVal > 0 ? ((Number(cost.output) || 0) / totalCostVal) * 100 : 0;
 
-    appEl.innerHTML = `
-      ${renderTopBar()}
-
-      <div class="scope-row">
-        <div class="seg-bar seg-sm">
-          <button class="seg-btn ${summaryScope === 'workspace' ? 'active' : ''}" data-scope="workspace">当前工作区</button>
-          <button class="seg-btn ${summaryScope === 'all' ? 'active' : ''}" data-scope="all">全部</button>
-        </div>
-        <span class="dim num" style="font-size:11px;">${summaryScope === 'all' ? '跨工作区全部会话' : '仅当前工作区'}</span>
-      </div>
-
-      <div class="range-row">
-        <div class="seg-bar">
-          ${ranges.map((r) => `<button class="seg-btn ${summaryRange === r.id ? 'active' : ''}" data-range="${r.id}">${r.label}</button>`).join('')}
-        </div>
-        <span class="dim num" style="font-size:11px;">${summary.conversations || 0} 会话 · ${summary.turns || 0} 轮</span>
-      </div>
-
+    const bentoHtml = isCost ? `
       <div class="bento">
         <div class="kpi">
-          <div class="kpi-head"><span>Token 总消耗</span><span class="kpi-tag">合计</span></div>
+          <div class="kpi-head"><span>估算总费用</span><span class="kpi-tag">API 参考价</span></div>
+          <div class="kpi-val num" style="color:var(--warn-fg)">${fmtCost(totalCostVal)}</div>
+          <div class="kpi-sub num">${summary.conversations || 0} 会话 · ${summary.turns || 0} 轮 · 均 ${fmtCost(cost.avgPerTurn)}/轮</div>
+        </div>
+
+        <div class="kpi">
+          <div class="kpi-head"><span>缓存节省金额</span><span class="kpi-tag">命中 ${fmtPct(cache.hitRate)}</span></div>
+          <div class="kpi-val num" style="color:var(--ok)">省 ${fmtCost(cost.savedByCache)}</div>
+          <div class="kpi-sub num">缓存读 ${fmtCost(cost.cacheRead)} · 共 ${fmtTok(totals.all)}</div>
+        </div>
+
+        <div class="kpi">
+          <div class="kpi-head"><span>输入费用</span><span class="kpi-tag">占 ${fmtPct(inputCostPct)}</span></div>
+          <div class="kpi-val num">${fmtCost(inputCostTotal)}</div>
+          <div class="kpi-sub num">新 ${fmtCost(cost.input)} · 缓存 ${fmtCost(cost.cacheRead)}</div>
+        </div>
+
+        <div class="kpi">
+          <div class="kpi-head"><span>输出费用</span><span class="kpi-tag">占 ${fmtPct(outputCostPct)}</span></div>
+          <div class="kpi-val num">${fmtCost(cost.output)}</div>
+          <div class="kpi-sub num">输出 ${fmtTok(totals.output)} · 均 ${fmtCost(cost.avgPerConv)}/会话</div>
+        </div>
+      </div>
+    ` : `
+      <div class="bento">
+        <div class="kpi">
+          <div class="kpi-head"><span>Token 总消耗</span><span class="kpi-tag">${totalCostVal > 0 ? `≈ ${fmtCost(totalCostVal)}` : '合计'}</span></div>
           <div class="kpi-val num">${fmtTok(totals.all)}</div>
-          <div class="kpi-sub num">${summary.conversations || 0} 个活跃会话</div>
+          <div class="kpi-sub num">${summary.conversations || 0} 个活跃会话 · ${summary.turns || 0} 轮</div>
         </div>
 
         <div class="kpi">
           <div class="kpi-head"><span>缓存命中 &amp; 均速</span><span class="kpi-tag">性能</span></div>
           <div class="kpi-val num" style="color:var(--ok)">${fmtPct(cache.hitRate)}</div>
-          <div class="kpi-sub num">均速 ${fmtSpeed(speed.avgTokensPerSec)} · TTFT ${fmtSec(speed.avgTtftSec)}</div>
+          <div class="kpi-sub num">均速 ${fmtSpeed(speed.avgTokensPerSec)} · 首字 ${fmtSec(speed.avgTtftSec)}</div>
         </div>
 
         <div class="kpi">
@@ -1006,45 +2334,79 @@
         <div class="kpi">
           <div class="kpi-head"><span>累计输出</span><span class="kpi-tag">${summary.turns || 0} 轮</span></div>
           <div class="kpi-val num">${fmtTok(totals.output)}</div>
-          <div class="kpi-sub num">思 ${fmtTok(totals.thinking)} · 答 ${fmtTok(totals.response)}</div>
+          <div class="kpi-sub num">思考 ${fmtTok(totals.thinking)} · 回复 ${fmtTok(totals.response)}</div>
         </div>
       </div>
+    `;
+
+    const formatPricingTip = (m) => {
+      const p = m.pricing;
+      if (!p) return '未匹配到公开参考单价';
+      return `参考单价（${p.label}，每 1M tokens）：输入 $${p.input} / 缓存读 $${p.cacheRead} / 输出 $${p.output}`;
+    };
+
+    const contentLayer = commitViewContent(`
+      ${renderErrBanner()}
+
+      ${renderSummaryFiltersHtml()}
+
+      ${bentoHtml}
 
       ${renderTimelineBarChart(summary.timeline)}
-      ${renderDonutChart(totals)}
 
       ${models.length > 0 ? `
         <div class="sub-card">
-          <div class="turns-toggle" style="cursor:default;">
-            <span>按模型分布</span>
-            <span class="dim num" style="font-weight:400;font-size:11px;">${models.length} 个模型</span>
+          <div class="card-head">
+            <span>${isCost ? '按模型费用与用量' : '按模型分布'}</span>
+            <span class="dim num" style="font-weight:400;font-size:11px;">${models.length} 个模型${isCost ? ' · 按金额排序' : ''}</span>
           </div>
           <div class="sub-list">
-            ${models.map((m) => `
-              <div class="model-row">
-                <div class="model-bar-wrap">
-                  <div class="model-bar-top">
-                    <span class="model-bar-name">${esc(m.modelName)}</span>
-                    <span class="num">${fmtTok(m.tokens)} <span class="dim">(${fmtPct(m.pct)} · ${m.turns}轮)</span></span>
+            ${models.map((m) => {
+              const barPct = Math.min(100, Number(isCost ? m.costPct : m.pct) || 0);
+              const tip = formatPricingTip(m);
+              if (isCost) {
+                return `
+                  <div class="model-row" title="${esc(tip)}">
+                    <div class="model-bar-wrap">
+                      <div class="model-bar-top">
+                        <span class="model-bar-name">${esc(m.modelName)}</span>
+                        <span class="num">${m.pricing ? fmtCost(m.cost) : '<span class="dim">未知单价</span>'} <span class="dim">(${fmtPct(m.costPct)})</span></span>
+                      </div>
+                      <div class="model-bar cost-bar"><div style="width:${barPct.toFixed(1)}%"></div></div>
+                      <div class="model-bar-sub num">
+                        <span>用量 ${fmtTok(m.tokens)} (入 ${fmtTok(m.input)} / 出 ${fmtTok(m.output)})</span>
+                        <span>${m.turns} 轮${m.pricing ? ` · 均 ${fmtCost(m.costPerTurn)}/轮` : ''}</span>
+                      </div>
+                    </div>
                   </div>
-                  <div class="model-bar"><div style="width:${Math.min(100, m.pct).toFixed(1)}%"></div></div>
+                `;
+              }
+              return `
+                <div class="model-row" title="${esc(tip)}">
+                  <div class="model-bar-wrap">
+                    <div class="model-bar-top">
+                      <span class="model-bar-name">${esc(m.modelName)}</span>
+                      <span class="num">${fmtTok(m.tokens)} <span class="dim">(${fmtPct(m.pct)} · ${m.turns}轮${m.cost > 0 ? ` · ${fmtCost(m.cost)}` : ''})</span></span>
+                    </div>
+                    <div class="model-bar"><div style="width:${barPct.toFixed(1)}%"></div></div>
+                  </div>
                 </div>
-              </div>
-            `).join('')}
+              `;
+            }).join('')}
           </div>
         </div>
       ` : ''}
 
       <div class="sub-card">
-        <div class="turns-toggle" style="cursor:default;">
-          <span>会话消耗排行</span>
+        <div class="card-head">
+          <span>${isCost ? '会话费用排行' : '会话消耗排行'}</span>
           <span class="dim num" style="font-weight:400;font-size:11px;">Top ${topConvs.length}</span>
         </div>
         <div class="sub-list">
           ${topConvs.length === 0
             ? '<p class="dim" style="font-size:11.5px;padding:12px;text-align:center;margin:0;">该时段暂无调用记录</p>'
             : topConvs.map((c) => `
-              <div class="sub-row" data-conv-id="${esc(c.id)}" title="点击切换到该会话详情">
+              <div class="sub-row" role="button" tabindex="0" data-conv-id="${esc(c.id)}" title="点击切换到该会话详情">
                 <div class="sub-left">
                   <div class="sub-title">
                     <span class="sub-role">${esc(c.title)}</span>
@@ -1055,7 +2417,9 @@
                   </div>
                 </div>
                 <div class="sub-right num">
-                  <div class="sub-ctx">${fmtTok(c.totalTokens)}</div>
+                  ${isCost
+                    ? `<div class="sub-ctx" style="color:var(--warn-fg)">${fmtCost(c.cost)}</div><div class="sub-ctx-sub">${fmtTok(c.totalTokens)}</div>`
+                    : `<div class="sub-ctx">${fmtTok(c.totalTokens)}</div>${c.cost > 0 ? `<div class="sub-ctx-sub">${fmtCost(c.cost)}</div>` : ''}`}
                 </div>
               </div>
             `).join('')}
@@ -1063,62 +2427,59 @@
       </div>
 
       <footer class="num">
-        <span>时段: ${ranges.find((r) => r.id === summaryRange)?.label || summaryRange} · 每 60s 自动更新</span>
+        <span>时段: ${ranges.find((r) => r.id === summaryRange)?.label || summaryRange} · ${isCost ? '按公开 API 参考价估算 · ' : ''}每 60s 自动更新</span>
         <span>${esc(updatedTime)}</span>
       </footer>
-    `;
+    `);
 
-    bindGlobalEvents(hostCid);
-    appEl.querySelectorAll('.seg-btn[data-scope]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const next = btn.getAttribute('data-scope');
-        if (!next || next === summaryScope) return;
-        summaryScope = next;
-        lastSummaryPayload = '';
-        resetPollTimer();
-        refresh(true);
-      });
-    });
-    appEl.querySelectorAll('.seg-btn[data-range]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const next = btn.getAttribute('data-range');
-        if (!next || next === summaryRange) return;
-        summaryRange = next;
-        lastSummaryPayload = '';
-        resetPollTimer();
-        refresh(true);
-      });
-    });
-    appEl.querySelectorAll('.sub-row[data-conv-id]').forEach((el) => {
-      el.addEventListener('click', () => {
+    bindSummaryFilters(contentLayer);
+    contentLayer.querySelectorAll('.sub-row[data-conv-id]').forEach((el) => {
+      const openConv = () => {
         const cid = el.getAttribute('data-conv-id');
         if (!cid) return;
         selectedConversationId = cid === hostCid ? '' : cid;
+        expandedTurns.clear();
         viewMode = 'session';
+        saveUiState();
         currentPage = 1;
         lastSessionPayload = '';
+        lastAnimatedSessionId = '';
+        beginViewTransition({ mode: 'session', direction: 'backward' });
         resetPollTimer();
         refresh(true);
+      };
+      el.addEventListener('click', openConv);
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          openConv();
+        }
       });
     });
     mountTimelineChart(summary.timeline);
-    mountDonutChart(totals);
+    pendingChartAnim = false;
+    pendingExpandAnim = '';
   }
 
   function render(data) {
     disposeCharts();
-    lastData = data;
+    const hostCid = activeSidecarConversation();
     if (!data || data.error === 'no-conversation') {
-      appEl.innerHTML = `${renderTopBar()}<p class="empty">暂无活跃会话，发送一条消息后将自动显示。</p>`;
-      bindGlobalEvents(activeSidecarConversation());
+      lastData = null;
+      commitViewContent('<p class="empty">暂无活跃会话，发送一条消息后将自动显示。</p>');
       return;
     }
     if (data.error) {
-      appEl.innerHTML = `<p class="empty">加载失败：${esc(data.message || data.error)}</p>`;
+      commitViewContent(renderErrorCard('会话数据加载失败', data.message || data.error));
       return;
     }
+    if (Number(data.cost?.usdToCny) > 0) {
+      usdToCny = Number(data.cost.usdToCny);
+    }
+    lastData = data;
 
     const isRunning = String(data.status || '').includes('RUNNING');
+    const statusLabel = isRunning ? '运行中' : (String(data.status || '').includes('IDLE') ? '待命' : '空闲');
     const ctx = data.context || {};
     const bd = data.breakdown || {};
     const totals = data.totals || {};
@@ -1129,28 +2490,43 @@
     const ctxPct = Math.max(0, Math.min(100, Number(ctx.pct) || 0));
     const tone = toneColor(ctxPct);
 
-    const hostCid = activeSidecarConversation();
-
     // 100-dot grid
-    const dots = Array.isArray(bd.dots) ? bd.dots : new Array(100).fill(null);
-    const dotsHtml = dots.map((c) =>
-      c ? `<span class="ctx-dot" style="background:${esc(c)}"></span>` : '<span class="ctx-dot"></span>',
-    ).join('');
-
     const cats = Array.isArray(bd.categories) ? bd.categories : [];
-    const catsHtml = cats.map((c) => `
-      <div class="cat-row">
+    const colorToCat = new Map(cats.map((c) => [c.color, c.name]));
+    const sessionAnimKey = `${data.cascadeId || 'mock'}:${mockMode ? mockScenario : 'live'}`;
+    const shouldAnimateDots = lastAnimatedSessionId !== sessionAnimKey;
+    lastAnimatedSessionId = sessionAnimKey;
+
+    const dots = Array.isArray(bd.dots) ? bd.dots : new Array(100).fill(null);
+    const dotsHtml = dots.map((c, idx) => {
+      const catAttr = c ? (colorToCat.get(c) || '') : '__free__';
+      const delay = (idx % 20) * 16 + Math.floor(idx / 20) * 32;
+      const delayStyle = shouldAnimateDots ? `--dot-delay:${delay}ms;` : '';
+      return c
+        ? `<span class="ctx-dot" data-cat="${esc(catAttr)}" style="background:${esc(c)};${delayStyle}"></span>`
+        : `<span class="ctx-dot" data-cat="__free__" style="${delayStyle}"></span>`;
+    }).join('');
+
+    const visibleCats = catsExpanded ? cats : cats.slice(0, 4);
+    const catsAnim = pendingExpandAnim === 'cats';
+    const catsHtml = visibleCats.map((c, idx) => `
+      <div class="cat-row${catsAnim && idx >= 4 ? ' anim-reveal' : ''}" data-cat="${esc(c.name)}">
         <span class="cat-mark" style="background:${esc(c.color)}"></span>
         <span>${esc(c.name)}</span>
         <span class="cat-tok num">${fmtTok(c.tokens)}</span>
         <span class="cat-pct num">${fmtPct(c.pct)}</span>
       </div>
     `).join('');
+    const catsMoreHtml = cats.length > 4 ? `
+      <button id="btn-toggle-cats" class="cat-more-btn" type="button" aria-expanded="${catsExpanded}">
+        ${catsExpanded ? '收起 ▴' : `展开其余 ${cats.length - 4} 项 ▾`}
+      </button>
+    ` : '';
 
     const freeHtml = ctx.max > 0 ? `
-      <div class="cat-row">
+      <div class="cat-row" data-cat="__free__">
         <span class="cat-mark free"></span>
-        <span class="dim">剩余可用 (Free space)</span>
+        <span class="dim">剩余可用</span>
         <span class="cat-tok num dim">${fmtTok(bd.free?.tokens ?? ctx.free)}</span>
         <span class="cat-pct num">${fmtPct(bd.free?.pct ?? (100 - ctxPct))}</span>
       </div>
@@ -1163,26 +2539,37 @@
     const startIdx = (currentPage - 1) * PAGE_SIZE;
     const pageTurns = allTurns.slice(startIdx, startIdx + PAGE_SIZE);
 
+    const turnsAnimClass = (pendingExpandAnim === 'turns' || pendingExpandAnim === 'page') ? ' anim-reveal' : '';
     const turnsBodyHtml = turnsExpanded ? `
-      <div class="turn-list">
+      <div class="turn-list${turnsAnimClass}">
         ${pageTurns.length === 0
           ? '<p class="dim" style="font-size:11.5px;padding:12px;text-align:center;margin:0;">暂无模型调用记录</p>'
           : pageTurns.map((t) => {
-              const tip = `输入 ${fmtTok(t.promptTotal)} (新 ${fmtTok(t.inputTokens)} / 缓存 ${fmtTok(t.cacheReadTokens)})\n输出 ${fmtTok(t.outputTokens)} (思考 ${fmtTok(t.thinkingOutputTokens)} / 正文 ${fmtTok(t.responseOutputTokens)})\nTTFT ${fmtSec(t.ttftSec)} · 流式 ${fmtSec(t.streamingSec)}`;
+              const turnKey = String(t.turnIndex);
+              const isTurnOpen = expandedTurns.has(turnKey);
+              const tip = `输入 ${fmtTok(t.promptTotal)} (新 ${fmtTok(t.inputTokens)} / 缓存 ${fmtTok(t.cacheReadTokens)})\n输出 ${fmtTok(t.outputTokens)} (思考 ${fmtTok(t.thinkingOutputTokens)} / 正文 ${fmtTok(t.responseOutputTokens)})\n首字 ${fmtSec(t.ttftSec)} · 流式 ${fmtSec(t.streamingSec)}`;
+              const ariaLabel = `第 ${t.turnIndex} 轮，模型 ${t.modelName}，速度 ${fmtSpeed(t.tokensPerSec)}，首字 ${fmtSec(t.ttftSec)}，流式 ${fmtSec(t.streamingSec)}；输入 ${fmtTok(t.promptTotal)}（新 ${fmtTok(t.inputTokens)}，缓存 ${fmtTok(t.cacheReadTokens)}，命中 ${fmtPct(t.cacheHitRate)}）；输出 ${fmtTok(t.outputTokens)}（思考 ${fmtTok(t.thinkingOutputTokens)}，正文 ${fmtTok(t.responseOutputTokens)}）`;
               return `
-                <div class="turn-row" title="${esc(tip)}">
-                  <div class="turn-left">
-                    <div class="turn-title">
-                      <span class="turn-num num">#${t.turnIndex}</span>
-                      <span class="turn-model">${esc(t.modelName)}</span>
+                <div class="turn-item">
+                  <div class="turn-row" role="button" tabindex="0" aria-expanded="${isTurnOpen}" data-turn-idx="${esc(turnKey)}" title="${esc(tip)}" aria-label="${esc(ariaLabel)}">
+                    <div class="turn-left">
+                      <div class="turn-title">
+                        <span class="turn-num num">#${t.turnIndex}</span>
+                        <span class="turn-model">${esc(t.modelName)}</span>
+                      </div>
+                      <div class="turn-sub num">
+                        ↑${fmtTok(t.promptTotal)} (命中 ${fmtPct(t.cacheHitRate)}) · ↓${fmtTok(t.outputTokens)}
+                      </div>
                     </div>
-                    <div class="turn-sub num">
-                      ↑${fmtTok(t.promptTotal)} (命中 ${fmtPct(t.cacheHitRate)}) · ↓${fmtTok(t.outputTokens)}
+                    <div class="turn-right num">
+                      <div class="turn-spd">${fmtSpeed(t.tokensPerSec)}</div>
+                      <div class="turn-dur">首字 ${fmtSec(t.ttftSec)}</div>
                     </div>
                   </div>
-                  <div class="turn-right num">
-                    <div class="turn-spd">${fmtSpeed(t.tokensPerSec)}</div>
-                    <div class="turn-dur">TTFT ${fmtSec(t.ttftSec)}</div>
+                  <div class="turn-detail num" ${isTurnOpen ? '' : 'hidden'}>
+                    <span>新输入 ${fmtTok(t.inputTokens)} / 缓存 ${fmtTok(t.cacheReadTokens)}</span>
+                    <span>思考 ${fmtTok(t.thinkingOutputTokens)} / 正文 ${fmtTok(t.responseOutputTokens)}</span>
+                    <span>流式时长 ${fmtSec(t.streamingSec)}</span>
                   </div>
                 </div>
               `;
@@ -1217,11 +2604,11 @@
         const sCtx = s.context || {};
         const sPct = Math.max(0, Math.min(100, Number(sCtx.pct) || 0));
         const sTone = toneColor(sPct);
-        const sSpeed = s.speed?.latestTokensPerSec != null ? `${s.speed.latestTokensPerSec.toFixed(0)} t/s` : '-';
+        const sSpeed = fmtSpeed(s.speed?.latestTokensPerSec);
         const sHit = s.cache?.overallHitRate != null ? `${s.cache.overallHitRate.toFixed(0)}%` : '-';
         const displayName = (useShortName && s.scriptName) ? s.scriptName : s.role;
         return `
-          <div class="sub-row" data-sub-id="${esc(s.id)}" title="${esc(s.role)} · 点击查看详情">
+          <div class="sub-row" role="button" tabindex="0" data-sub-id="${esc(s.id)}" title="${esc(s.role)} · 点击查看详情">
             <div class="sub-left">
               <div class="sub-title">
                 <span class="sub-dot ${sDotClass}"></span>
@@ -1276,7 +2663,7 @@
 
     const swarmHtml = swarmWorkers.length > 0 ? `
       <div class="sub-card">
-        <button id="btn-toggle-swarm" class="turns-toggle">
+        <button id="btn-toggle-swarm" class="turns-toggle" type="button" aria-expanded="${swarmExpanded}">
           <span class="turns-toggle-left">
             <svg class="chevron ${swarmExpanded ? 'open' : ''}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M6 4l4 4-4 4"/>
@@ -1287,7 +2674,7 @@
           <span class="dim num" style="font-weight:400;font-size:11px;">成员 ${fmtTok(swarmSubTotalTok)} tok</span>
         </button>
         ${swarmDistHtml}
-        ${swarmExpanded ? `<div class="sub-list">${renderAgentRows(swarmWorkers, true)}</div>` : ''}
+        ${swarmExpanded ? `<div class="sub-list${pendingExpandAnim === 'swarm' ? ' anim-reveal' : ''}">${renderAgentRows(swarmWorkers, true)}</div>` : ''}
       </div>
     ` : '';
 
@@ -1295,7 +2682,7 @@
     const normalRunningCount = normalSubagents.filter((s) => !s.killed && String(s.status || '').includes('RUNNING')).length;
     const subagentsHtml = normalSubagents.length > 0 ? `
       <div class="sub-card">
-        <button id="btn-toggle-subagents" class="turns-toggle">
+        <button id="btn-toggle-subagents" class="turns-toggle" type="button" aria-expanded="${subagentsExpanded}">
           <span class="turns-toggle-left">
             <svg class="chevron ${subagentsExpanded ? 'open' : ''}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M6 4l4 4-4 4"/>
@@ -1305,7 +2692,7 @@
           </span>
           <span class="dim num" style="font-weight:400;font-size:11px;">合计 ${fmtTok(normalSubTok)} tok</span>
         </button>
-        ${subagentsExpanded ? `<div class="sub-list">${renderAgentRows(normalSubagents, false)}</div>` : ''}
+        ${subagentsExpanded ? `<div class="sub-list${pendingExpandAnim === 'subagents' ? ' anim-reveal' : ''}">${renderAgentRows(normalSubagents, false)}</div>` : ''}
       </div>
     ` : '';
 
@@ -1321,15 +2708,29 @@
     ` : '';
 
     const updatedTime = data.updatedAt ? new Date(data.updatedAt).toLocaleTimeString('zh-CN', { hour12: false }) : '';
+    const heroAlertHtml = ctxPct >= 90
+      ? `<div class="hero-alert crit" role="alert"><span>上下文已达 ${ctxPct.toFixed(0)}%，建议立即压缩或开启新对话</span><button id="btn-copy-compact" class="hero-alert-btn" type="button">复制 /compact</button></div>`
+      : (ctxPct >= 75
+          ? `<div class="hero-alert warn" role="alert"><span>上下文已达 ${ctxPct.toFixed(0)}%，建议适时执行 /compact 压缩</span><button id="btn-copy-compact" class="hero-alert-btn" type="button">复制 /compact</button></div>`
+          : '');
+    const topTitle = data.title || (data.cascadeId ? `会话 ${data.cascadeId.slice(0, 8)}` : '');
+    const sessionLabel = data.title
+      ? `${esc(data.title)} · ${esc((data.cascadeId || '').slice(0, 8))}`
+      : `会话 ${esc((data.cascadeId || '').slice(0, 8))}`;
+    const catSummary = cats.map((c) => `${c.name} ${fmtTok(c.tokens)} (${fmtPct(c.pct)})`).join('，');
+    const dotGridLabel = ctx.max > 0
+      ? `上下文窗口占用 ${fmtPct(ctxPct)}，已用 ${fmtTok(ctx.used)} / ${fmtTok(ctx.max)} tokens${catSummary ? '；主要构成：' + catSummary : ''}`
+      : `上下文窗口已用 ${fmtTok(ctx.used)} tokens${catSummary ? '；主要构成：' + catSummary : ''}`;
 
-    appEl.innerHTML = `
-      ${renderTopBar()}
+    const contentLayer = commitViewContent(`
+      ${renderErrBanner()}
 
-      <div style="margin-bottom:10px;">
-        <div class="model-badge" title="${esc(data.status)}">
+      <div class="session-head">
+        <div class="model-badge" title="状态：${esc(statusLabel)}">
           <span class="dot ${isRunning ? 'running' : ''}"></span>
           <span class="model-name">${esc(data.modelName)}</span>
         </div>
+        ${topTitle ? `<div class="session-title" title="${esc(topTitle)}">${esc(topTitle)}</div>` : ''}
       </div>
 
       ${backBarHtml}
@@ -1345,9 +2746,11 @@
           <span class="hero-used">${fmtTok(ctx.used)}</span>
           <span class="hero-max">/ ${ctx.max > 0 ? fmtTok(ctx.max) : '未知上限'} tokens</span>
         </div>
-        <div class="dot-grid" title="每个圆点约代表上下文窗口的 1%">${dotsHtml}</div>
+        ${heroAlertHtml}
+        <div class="dot-grid${shouldAnimateDots ? ' animate-in' : ''}" role="img" aria-label="${esc(dotGridLabel)}" title="每个圆点约代表上下文窗口的 1%">${dotsHtml}</div>
         <div class="cat-list">
           ${catsHtml}
+          ${catsMoreHtml}
           ${freeHtml}
         </div>
       </div>
@@ -1357,7 +2760,7 @@
           <div class="kpi-head"><span>生成速度</span><span class="kpi-tag">最新</span></div>
           <div class="kpi-val num" style="color:var(--ok)">${fmtSpeed(speed.latestTokensPerSec)}</div>
           <div class="kpi-sub num">
-            均值 ${fmtSpeed(speed.avgTokensPerSec)} · TTFT ${fmtSec(speed.latestTtftSec)}
+            均值 ${fmtSpeed(speed.avgTokensPerSec)} · 首字 ${fmtSec(speed.latestTtftSec)}
           </div>
         </div>
 
@@ -1378,10 +2781,10 @@
         </div>
 
         <div class="kpi">
-          <div class="kpi-head"><span>累计输出</span><span class="kpi-tag">总 ${fmtTok(totals.all)}</span></div>
+          <div class="kpi-head"><span>累计输出</span><span class="kpi-tag">${data.cost?.priced && data.cost.total > 0 ? `≈ ${fmtCost(data.cost.total)}` : `总 ${fmtTok(totals.all)}`}</span></div>
           <div class="kpi-val num">${fmtTok(totals.output)}</div>
           <div class="kpi-sub num">
-            思 ${fmtTok(totals.thinking)} · 答 ${fmtTok(totals.response)}
+            思考 ${fmtTok(totals.thinking)} · 回复 ${fmtTok(totals.response)}
           </div>
         </div>
       </div>
@@ -1391,9 +2794,9 @@
       ${subagentsHtml}
 
       <div class="turns-card">
-        <button id="btn-toggle-turns" class="turns-toggle">
+        <button id="btn-toggle-turns" class="turns-toggle" type="button" aria-expanded="${turnsExpanded}">
           <span class="turns-toggle-left">
-            <svg class="chevron ${turnsExpanded ? 'open' : ''}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <svg class="chevron ${turnsExpanded ? 'open' : ''}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M6 4l4 4-4 4"/>
             </svg>
             <span>调用明细</span>
@@ -1404,58 +2807,162 @@
       </div>
 
       <footer class="num">
-        <span>会话 ${esc((data.cascadeId || '').slice(0, 8))} · ${data.numTotalSteps || 0} 步</span>
-        <span>${esc(updatedTime)}</span>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${sessionLabel} · ${data.numTotalSteps || 0} 步 · 自动刷新 2.5s</span>
+        <span style="flex:none;">${esc(updatedTime)}</span>
       </footer>
-    `;
+    `);
 
-    bindGlobalEvents(hostCid);
     mountToolTreemapChart(data.toolTreemap);
-    appEl.querySelectorAll('.seg-btn[data-tool-view]').forEach((btn) => {
+    pendingChartAnim = false;
+    pendingExpandAnim = '';
+    contentLayer.querySelector('#btn-toggle-cats')?.addEventListener('click', () => {
+      catsExpanded = !catsExpanded;
+      pendingExpandAnim = catsExpanded ? 'cats' : '';
+      saveUiState();
+      render(lastData);
+    });
+    const heroEl = contentLayer.querySelector('.hero');
+    if (heroEl) {
+      let activeHoverCat = '';
+      const setHoverCat = (cat) => {
+        if (cat === activeHoverCat) return;
+        activeHoverCat = cat;
+        heroEl.classList.toggle('has-hover', Boolean(cat));
+        heroEl.querySelectorAll('[data-cat]').forEach((el) => {
+          el.classList.toggle('is-match', Boolean(cat) && el.getAttribute('data-cat') === cat);
+        });
+      };
+      heroEl.addEventListener('mouseover', (e) => {
+        const target = e.target.closest('[data-cat]');
+        setHoverCat(target ? (target.getAttribute('data-cat') || '') : '');
+      });
+      heroEl.addEventListener('mouseleave', () => setHoverCat(''));
+    }
+    contentLayer.querySelector('#btn-copy-compact')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      let copied = false;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        try {
+          await navigator.clipboard.writeText('/compact');
+          copied = true;
+        } catch {}
+      }
+      if (!copied) {
+        let ta = null;
+        try {
+          ta = document.createElement('textarea');
+          ta.value = '/compact';
+          ta.setAttribute('readonly', '');
+          ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0;';
+          document.body.appendChild(ta);
+          ta.select();
+          ta.setSelectionRange(0, ta.value.length);
+          copied = Boolean(document.execCommand && document.execCommand('copy'));
+        } catch {
+          copied = false;
+        } finally {
+          if (ta && ta.parentNode) ta.parentNode.removeChild(ta);
+        }
+      }
+      const orig = btn.dataset.origLabel || btn.textContent;
+      btn.dataset.origLabel = orig;
+      btn.textContent = copied ? '已复制' : '复制失败，请手动输入 /compact';
+      setTimeout(() => {
+        if (btn.isConnected) btn.textContent = orig;
+      }, copied ? 1400 : 2400);
+    });
+    contentLayer.querySelectorAll('.seg-btn[data-tool-view]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const next = btn.getAttribute('data-tool-view');
         if (!next || next === toolViewMode) return;
         toolViewMode = next;
+        pendingExpandAnim = 'tools';
+        pendingChartAnim = true;
+        saveUiState();
         render(lastData);
       });
     });
-    document.getElementById('btn-back-parent')?.addEventListener('click', (e) => {
+    contentLayer.querySelector('#btn-back-parent')?.addEventListener('click', (e) => {
       const target = e.currentTarget.getAttribute('data-target') || '';
       selectedConversationId = target === hostCid ? '' : target;
+      expandedTurns.clear();
       currentPage = 1;
+      lastSessionPayload = '';
+      lastAnimatedSessionId = '';
+      beginViewTransition({ mode: 'session', direction: 'backward' });
       refresh(true);
     });
-    document.getElementById('btn-toggle-swarm')?.addEventListener('click', () => {
+    contentLayer.querySelector('#btn-toggle-swarm')?.addEventListener('click', () => {
       swarmExpanded = !swarmExpanded;
+      pendingExpandAnim = swarmExpanded ? 'swarm' : '';
+      saveUiState();
       render(lastData);
     });
-    document.getElementById('btn-toggle-subagents')?.addEventListener('click', () => {
+    contentLayer.querySelector('#btn-toggle-subagents')?.addEventListener('click', () => {
       subagentsExpanded = !subagentsExpanded;
+      pendingExpandAnim = subagentsExpanded ? 'subagents' : '';
+      saveUiState();
       render(lastData);
     });
-    document.getElementById('btn-toggle-turns')?.addEventListener('click', () => {
+    contentLayer.querySelector('#btn-toggle-turns')?.addEventListener('click', () => {
       turnsExpanded = !turnsExpanded;
+      pendingExpandAnim = turnsExpanded ? 'turns' : '';
+      saveUiState();
       render(lastData);
     });
-    document.getElementById('btn-prev')?.addEventListener('click', () => {
+    contentLayer.querySelectorAll('.turn-row[data-turn-idx]').forEach((row) => {
+      const toggleTurn = () => {
+        const idx = row.getAttribute('data-turn-idx');
+        if (!idx) return;
+        const detail = row.nextElementSibling;
+        const nextOpen = !expandedTurns.has(idx);
+        if (nextOpen) expandedTurns.add(idx);
+        else expandedTurns.delete(idx);
+        row.setAttribute('aria-expanded', String(nextOpen));
+        if (detail && detail.classList.contains('turn-detail')) {
+          detail.hidden = !nextOpen;
+        }
+      };
+      row.addEventListener('click', toggleTurn);
+      row.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          toggleTurn();
+        }
+      });
+    });
+    contentLayer.querySelector('#btn-prev')?.addEventListener('click', () => {
       if (currentPage > 1) {
         currentPage -= 1;
+        pendingExpandAnim = 'page';
         render(lastData);
       }
     });
-    document.getElementById('btn-next')?.addEventListener('click', () => {
+    contentLayer.querySelector('#btn-next')?.addEventListener('click', () => {
       if (currentPage < totalPages) {
         currentPage += 1;
+        pendingExpandAnim = 'page';
         render(lastData);
       }
     });
-    appEl.querySelectorAll('.sub-row[data-sub-id]').forEach((el) => {
-      el.addEventListener('click', () => {
+    contentLayer.querySelectorAll('.sub-row[data-sub-id]').forEach((el) => {
+      const openSub = () => {
         const sid = el.getAttribute('data-sub-id');
         if (!sid) return;
         selectedConversationId = sid === hostCid ? '' : sid;
+        expandedTurns.clear();
         currentPage = 1;
+        lastSessionPayload = '';
+        lastAnimatedSessionId = '';
+        beginViewTransition({ mode: 'session', direction: 'forward' });
         refresh(true);
+      };
+      el.addEventListener('click', openSub);
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          openSub();
+        }
       });
     });
   }
@@ -1478,15 +2985,53 @@
       clearInterval(pollTimer);
       pollTimer = null;
     }
+    if (viewMode === 'settings') return;
     const intervalMs = viewMode === 'summary' ? SUMMARY_POLL_MS : SESSION_POLL_MS;
     pollTimer = setInterval(() => refresh(false), intervalMs);
   }
 
+  async function refreshPricing(seq) {
+    if (mockMode) {
+      const cfg = pricingDraft || getMockPricingDefaults();
+      if (!(await waitForTransitionReady(seq)) || viewMode !== 'settings') return;
+      usdToCny = Number(cfg.usdToCny) || 6.67;
+      renderSettings(cfg);
+      return;
+    }
+    try {
+      const res = await doFetch('/api/pricing');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (seq !== refreshSeq || viewMode !== 'settings') return;
+      if (!(await waitForTransitionReady(seq)) || viewMode !== 'settings') return;
+      if (data?.error) throw new Error(data.message || data.error);
+      const cfg = data?.config || getMockPricingDefaults();
+      if (Number(cfg.usdToCny) > 0) usdToCny = Number(cfg.usdToCny);
+      renderSettings(cfg);
+    } catch (err) {
+      if (seq !== refreshSeq || viewMode !== 'settings') return;
+      if (!(await waitForTransitionReady(seq)) || viewMode !== 'settings') return;
+      disposeCharts();
+      commitViewContent(renderErrorCard('单价配置加载失败', err.message || '请求失败'));
+    }
+  }
+
   async function refreshSummary(force, seq) {
+    if (mockMode) {
+      const summary = getMockSummary();
+      if (!(await waitForTransitionReady(seq)) || viewMode !== 'summary') return;
+      lastFetchError = '';
+      lastSummaryFetchedAt = Date.now();
+      renderSummary(summary);
+      return;
+    }
     try {
       const res = await doFetch(`/api/summary?range=${encodeURIComponent(summaryRange)}&scope=${encodeURIComponent(summaryScope)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const summary = await res.json();
       if (seq !== refreshSeq || viewMode !== 'summary') return;
+      if (!(await waitForTransitionReady(seq)) || viewMode !== 'summary') return;
+      lastFetchError = '';
       lastSummaryFetchedAt = Date.now();
       const serialized = serializePayload(summary);
       if (force || serialized !== lastSummaryPayload) {
@@ -1495,19 +3040,39 @@
       }
     } catch (err) {
       if (seq !== refreshSeq || viewMode !== 'summary') return;
+      if (!(await waitForTransitionReady(seq)) || viewMode !== 'summary') return;
+      lastFetchError = err.message || '请求失败';
+      if (lastSummary && !lastSummary.error) {
+        renderSummary(lastSummary);
+        return;
+      }
       disposeCharts();
-      appEl.innerHTML = `${renderTopBar()}<p class="empty">请求出错：${esc(err.message)}</p>`;
-      bindGlobalEvents(activeSidecarConversation());
+      commitViewContent(renderErrorCard('全局统计请求出错', lastFetchError));
     }
   }
 
   async function refreshSession(force, seq) {
     const cid = selectedConversationId || activeSidecarConversation();
+    if (mockMode) {
+      const data = getMockMetrics(cid);
+      if (!(await waitForTransitionReady(seq)) || viewMode !== 'session') return;
+      lastFetchError = '';
+      render(data);
+      return;
+    }
     try {
       const qs = cid ? `?conversationId=${encodeURIComponent(cid)}` : '';
       const metricsRes = await doFetch(`/api/metrics${qs}`);
+      if (!metricsRes.ok) throw new Error(`HTTP ${metricsRes.status}`);
       const data = await metricsRes.json();
       if (seq !== refreshSeq || viewMode !== 'session') return;
+      if (!(await waitForTransitionReady(seq)) || viewMode !== 'session') return;
+      if (data && data.error && data.error !== 'no-conversation' && lastData && !lastData.error) {
+        lastFetchError = data.message || data.error;
+        render(lastData);
+        return;
+      }
+      lastFetchError = '';
       const serialized = serializePayload(data);
       if (force || serialized !== lastSessionPayload) {
         lastSessionPayload = serialized;
@@ -1515,18 +3080,46 @@
       }
     } catch (err) {
       if (seq !== refreshSeq || viewMode !== 'session') return;
+      if (!(await waitForTransitionReady(seq)) || viewMode !== 'session') return;
+      lastFetchError = err.message || '请求失败';
+      if (lastData && !lastData.error) {
+        render(lastData);
+        return;
+      }
       disposeCharts();
-      appEl.innerHTML = `${renderTopBar()}<p class="empty">请求出错：${esc(err.message)}</p>`;
-      bindGlobalEvents(activeSidecarConversation());
+      commitViewContent(renderErrorCard('会话监控请求出错', lastFetchError));
     }
   }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === 'r' || e.key === 'R') {
+      if (viewMode === 'settings') return;
+      e.preventDefault();
+      resetPollTimer();
+      refresh(true);
+    } else if (e.key === '1' && viewMode !== 'session') {
+      switchView('session');
+    } else if (e.key === '2' && viewMode !== 'summary') {
+      switchView('summary');
+    } else if (e.key === 'Escape') {
+      if (viewMode === 'settings') {
+        switchView(previousViewMode || 'summary');
+      } else {
+        document.getElementById('btn-back-parent')?.click();
+      }
+    }
+  });
 
   async function refresh(force = false) {
     if (document.hidden && !force) return;
     const seq = ++refreshSeq;
     if (force) setRefreshBtnLoading(true);
     try {
-      if (viewMode === 'summary') {
+      if (viewMode === 'settings') {
+        await refreshPricing(seq);
+      } else if (viewMode === 'summary') {
         await refreshSummary(force, seq);
       } else {
         await refreshSession(force, seq);
@@ -1536,10 +3129,11 @@
     }
   }
 
+  beginViewTransition({ mode: viewMode, direction: 'fade', skipExit: true });
   resetPollTimer();
   refresh(true);
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) return;
+    if (document.hidden || viewMode === 'settings') return;
     if (viewMode === 'summary') {
       if (Date.now() - lastSummaryFetchedAt >= SUMMARY_POLL_MS) {
         resetPollTimer();

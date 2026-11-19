@@ -80,17 +80,23 @@ export function startCdpInjector({ getMetrics, ports = CANDIDATE_PORTS }) {
         const metrics = entry.conversationId
           ? await getMetrics(entry.conversationId)
           : { empty: true, cascadeId: '' };
-        const data = (!metrics || metrics.error)
+        const data = !metrics
           ? { empty: true, cascadeId: entry.conversationId }
-          : {
-              cascadeId: metrics.cascadeId,
-              modelName: metrics.modelName,
-              turnCount: metrics.turnCount,
-              context: metrics.context,
-              totals: metrics.totals,
-              cache: metrics.cache,
-              speed: metrics.speed,
-            };
+          : metrics.error
+            ? {
+                cascadeId: entry.conversationId,
+                error: metrics.error,
+                message: metrics.message || metrics.error,
+              }
+            : {
+                cascadeId: metrics.cascadeId,
+                modelName: metrics.modelName,
+                turnCount: metrics.turnCount,
+                context: metrics.context,
+                totals: metrics.totals,
+                cache: metrics.cache,
+                speed: metrics.speed,
+              };
         const payload = JSON.stringify(data);
         if (payload === entry.lastSerialized) continue;
         entry.lastSerialized = payload;
