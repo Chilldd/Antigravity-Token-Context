@@ -8,32 +8,379 @@
 <script src="/echarts.min.js" onerror="var s=document.createElement('script');s.src='./vendor/echarts.min.js';document.head.appendChild(s);"></script>
 <style>
   :root {
-    --fg: var(--foreground, #1f2328);
-    --dim: var(--muted-foreground, #656d76);
-    --bg: var(--background, transparent);
-    --line: var(--border, color-mix(in srgb, var(--fg) 10%, transparent));
-    --surface: color-mix(in srgb, var(--fg) 3.5%, transparent);
-    --surface-hover: color-mix(in srgb, var(--fg) 6.5%, transparent);
-    --track: color-mix(in srgb, var(--fg) 10%, transparent);
-    --empty-dot: color-mix(in srgb, var(--fg) 14%, transparent);
-    --accent: #3b82f6;
-    --ok: #10b981;
-    --warn: #f59e0b;
-    --warn-fg: #b45309;
-    --danger: #ef4444;
+    /* Surfaces & Canvas (Precision Telemetry - Light) */
+    --bg-canvas: color-mix(in srgb, var(--background, #f7f8fa) 97%, #0f172a 3%);
+    --surface: #ffffff;
+    --surface-subtle: #f3f5f8;
+    --surface-hover: #eef1f6;
+    --surface-active: #e7ebf2;
+    --seg-bg: #eef0f4;
+    --seg-active-bg: #ffffff;
+    --seg-active-shadow: 0 1px 2px rgba(15, 23, 42, 0.07), 0 0 0 0.5px rgba(15, 23, 42, 0.05);
+    --line: rgba(15, 23, 42, 0.08);
+    --line-subtle: rgba(15, 23, 42, 0.055);
+    --line-strong: rgba(15, 23, 42, 0.14);
+    --card-shadow: 0 1px 2px rgba(15, 23, 42, 0.03), 0 0 0 1px rgba(15, 23, 42, 0.015);
+    --track: #e6e9f0;
+    --empty-dot: #e2e6ee;
+
+    /* Typography */
+    --fg: var(--foreground, #111827);
+    --fg-secondary: #4b5563;
+    --dim: var(--muted-foreground, #6b7280);
+    --muted: #9ca3af;
+
+    /* Tooltip */
+    --tooltip-bg: rgba(255, 255, 255, 0.98);
+    --tooltip-border: rgba(15, 23, 42, 0.09);
+    --tooltip-shadow: 0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 12px 24px -6px rgba(15, 23, 42, 0.10);
+
+    /* Semantic Palette */
+    --accent: #3b6ce7;
+    --accent-fg: #2c56c8;
+    --accent-bg: rgba(59, 108, 231, 0.08);
+    --accent-border: rgba(59, 108, 231, 0.22);
+    --ok: #0f8b6c;
+    --ok-fg: #0b7258;
+    --ok-bg: rgba(15, 139, 108, 0.09);
+    --warn: #c9821e;
+    --warn-fg: #9a5b0c;
+    --warn-bg: rgba(201, 130, 30, 0.10);
+    --warn-border: rgba(201, 130, 30, 0.28);
+    --danger: #cf3a3a;
+    --danger-fg: #b42828;
+    --danger-bg: rgba(207, 58, 58, 0.09);
+    --danger-border: rgba(207, 58, 58, 0.28);
+
+    /* Timeline Bar Chart */
+    --viz-cache: #afc8f7;
+    --viz-input: #3b6ce7;
+    --viz-output: #d6943a;
+    --viz-grid: rgba(15, 23, 42, 0.06);
+
+    /* Context 100-Dot Matrix */
+    --ctx-system: #94a3b8;
+    --ctx-systools: #64748b;
+    --ctx-skills: #7c6fd6;
+    --ctx-subagents: #9a8fe2;
+    --ctx-other: #b4acec;
+    --ctx-sysmsg: #d97070;
+    --ctx-user: #8aaef0;
+    --ctx-agent: #3b6ce7;
+    --ctx-tool: #d6943a;
+
+    /* Tool Treemap (Soft Tinted Fill + Crisp Border + High-Contrast Text + Accent) */
+    --tm-command-bg: #eef3fc;
+    --tm-command-border: #c8d8f6;
+    --tm-command-fg: #1e3a6d;
+    --tm-command-accent: #4b7be5;
+
+    --tm-file_read-bg: #edf7f4;
+    --tm-file_read-border: #bee3d8;
+    --tm-file_read-fg: #134e41;
+    --tm-file_read-accent: #1f9d81;
+
+    --tm-file_edit-bg: #fcf5e8;
+    --tm-file_edit-border: #ebd3a7;
+    --tm-file_edit-fg: #6e4511;
+    --tm-file_edit-accent: #c98a2b;
+
+    --tm-search-bg: #f1f4f8;
+    --tm-search-border: #cfd8e3;
+    --tm-search-fg: #2d3b4e;
+    --tm-search-accent: #64748b;
+
+    --tm-model-bg: #f3f1fc;
+    --tm-model-border: #d5cef5;
+    --tm-model-fg: #3b2e6b;
+    --tm-model-accent: #7c6fd6;
+
+    --tm-agent-bg: #edf6f9;
+    --tm-agent-border: #bddfea;
+    --tm-agent-fg: #1b4959;
+    --tm-agent-accent: #3a8ca3;
+
+    --tm-other-bg: #f4f4f6;
+    --tm-other-border: #d8dce2;
+    --tm-other-fg: #3f4550;
+    --tm-other-accent: #8c95a4;
+
+    /* Swarm Distribution */
+    --swarm-0: #64748b;
+    --swarm-1: #3b6ce7;
+    --swarm-2: #1f9d81;
+    --swarm-3: #c98a2b;
+    --swarm-4: #7c6fd6;
+    --swarm-5: #3a8ca3;
+    --swarm-6: #c46c7b;
   }
+
   @media (prefers-color-scheme: dark) {
     :root {
-      --fg: var(--foreground, #e6edf3);
-      --dim: var(--muted-foreground, #8b949e);
-      --warn-fg: #fbbf24;
+      --bg-canvas: var(--background, #13151a);
+      --surface: #1a1d24;
+      --surface-subtle: #222630;
+      --surface-hover: #282d39;
+      --surface-active: #2f3544;
+      --seg-bg: #1e222b;
+      --seg-active-bg: #2b303d;
+      --seg-active-shadow: 0 1px 2px rgba(0, 0, 0, 0.30);
+      --line: rgba(255, 255, 255, 0.085);
+      --line-subtle: rgba(255, 255, 255, 0.055);
+      --line-strong: rgba(255, 255, 255, 0.16);
+      --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.24);
+      --track: rgba(255, 255, 255, 0.10);
+      --empty-dot: rgba(255, 255, 255, 0.13);
+      --fg: var(--foreground, #eef1f6);
+      --fg-secondary: #b4bcc9;
+      --dim: var(--muted-foreground, #8b94a5);
+      --muted: #656e7f;
+      --tooltip-bg: rgba(26, 29, 36, 0.96);
+      --tooltip-border: rgba(255, 255, 255, 0.12);
+      --tooltip-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+      --accent: #6b93f2;
+      --accent-fg: #8cb0f8;
+      --accent-bg: rgba(107, 147, 242, 0.15);
+      --accent-border: rgba(107, 147, 242, 0.34);
+      --ok: #2cb593;
+      --ok-fg: #4fd1af;
+      --ok-bg: rgba(44, 181, 147, 0.14);
+      --warn: #e0a043;
+      --warn-fg: #f0b95e;
+      --warn-bg: rgba(224, 160, 67, 0.15);
+      --warn-border: rgba(224, 160, 67, 0.34);
+      --danger: #e46464;
+      --danger-fg: #f28484;
+      --danger-bg: rgba(228, 100, 100, 0.16);
+      --danger-border: rgba(228, 100, 100, 0.36);
+      --viz-cache: #4666a8;
+      --viz-input: #6b93f2;
+      --viz-output: #e0a043;
+      --viz-grid: rgba(255, 255, 255, 0.07);
+      --ctx-system: #7b8799;
+      --ctx-systools: #94a3b8;
+      --ctx-skills: #9a8fe2;
+      --ctx-subagents: #b2a9ec;
+      --ctx-other: #c7c0f2;
+      --ctx-sysmsg: #e47d7d;
+      --ctx-user: #7aa3eb;
+      --ctx-agent: #5b87ef;
+      --ctx-tool: #e0a043;
+      --tm-command-bg: #1c263b;
+      --tm-command-border: #2e4268;
+      --tm-command-fg: #dce8fc;
+      --tm-command-accent: #6b93f2;
+      --tm-file_read-bg: #172b27;
+      --tm-file_read-border: #254d44;
+      --tm-file_read-fg: #d5f2e9;
+      --tm-file_read-accent: #2cb593;
+      --tm-file_edit-bg: #2d2518;
+      --tm-file_edit-border: #544123;
+      --tm-file_edit-fg: #f7e2be;
+      --tm-file_edit-accent: #e0a043;
+      --tm-search-bg: #222731;
+      --tm-search-border: #374050;
+      --tm-search-fg: #dce3ed;
+      --tm-search-accent: #8a99ad;
+      --tm-model-bg: #252236;
+      --tm-model-border: #403861;
+      --tm-model-fg: #e3defa;
+      --tm-model-accent: #9a8fe2;
+      --tm-agent-bg: #182a31;
+      --tm-agent-border: #294c59;
+      --tm-agent-fg: #d0ecf4;
+      --tm-agent-accent: #56abc4;
+      --tm-other-bg: #25272d;
+      --tm-other-border: #3d414b;
+      --tm-other-fg: #dfe3ea;
+      --tm-other-accent: #9ca4b3;
+      --swarm-0: #7b8799;
+      --swarm-1: #6b93f2;
+      --swarm-2: #2cb593;
+      --swarm-3: #e0a043;
+      --swarm-4: #9a8fe2;
+      --swarm-5: #56abc4;
+      --swarm-6: #d98292;
     }
   }
-  :root.light-surface { --warn-fg: #b45309; }
-  :root.dark-surface { --warn-fg: #fbbf24; }
+
+  :root.light-surface {
+    --bg-canvas: color-mix(in srgb, var(--background, #f7f8fa) 97%, #0f172a 3%);
+    --surface: #ffffff;
+    --surface-subtle: #f3f5f8;
+    --surface-hover: #eef1f6;
+    --surface-active: #e7ebf2;
+    --seg-bg: #eef0f4;
+    --seg-active-bg: #ffffff;
+    --seg-active-shadow: 0 1px 2px rgba(15, 23, 42, 0.07), 0 0 0 0.5px rgba(15, 23, 42, 0.05);
+    --line: rgba(15, 23, 42, 0.08);
+    --line-subtle: rgba(15, 23, 42, 0.055);
+    --line-strong: rgba(15, 23, 42, 0.14);
+    --card-shadow: 0 1px 2px rgba(15, 23, 42, 0.03), 0 0 0 1px rgba(15, 23, 42, 0.015);
+    --track: #e6e9f0;
+    --empty-dot: #e2e6ee;
+    --fg: var(--foreground, #111827);
+    --fg-secondary: #4b5563;
+    --dim: var(--muted-foreground, #6b7280);
+    --muted: #9ca3af;
+    --tooltip-bg: rgba(255, 255, 255, 0.98);
+    --tooltip-border: rgba(15, 23, 42, 0.09);
+    --tooltip-shadow: 0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 12px 24px -6px rgba(15, 23, 42, 0.10);
+    --accent: #3b6ce7;
+    --accent-fg: #2c56c8;
+    --accent-bg: rgba(59, 108, 231, 0.08);
+    --accent-border: rgba(59, 108, 231, 0.22);
+    --ok: #0f8b6c;
+    --ok-fg: #0b7258;
+    --ok-bg: rgba(15, 139, 108, 0.09);
+    --warn: #c9821e;
+    --warn-fg: #9a5b0c;
+    --warn-bg: rgba(201, 130, 30, 0.10);
+    --warn-border: rgba(201, 130, 30, 0.28);
+    --danger: #cf3a3a;
+    --danger-fg: #b42828;
+    --danger-bg: rgba(207, 58, 58, 0.09);
+    --danger-border: rgba(207, 58, 58, 0.28);
+    --viz-cache: #afc8f7;
+    --viz-input: #3b6ce7;
+    --viz-output: #d6943a;
+    --viz-grid: rgba(15, 23, 42, 0.06);
+    --ctx-system: #94a3b8;
+    --ctx-systools: #64748b;
+    --ctx-skills: #7c6fd6;
+    --ctx-subagents: #9a8fe2;
+    --ctx-other: #b4acec;
+    --ctx-sysmsg: #d97070;
+    --ctx-user: #8aaef0;
+    --ctx-agent: #3b6ce7;
+    --ctx-tool: #d6943a;
+    --tm-command-bg: #eef3fc;
+    --tm-command-border: #c8d8f6;
+    --tm-command-fg: #1e3a6d;
+    --tm-command-accent: #4b7be5;
+    --tm-file_read-bg: #edf7f4;
+    --tm-file_read-border: #bee3d8;
+    --tm-file_read-fg: #134e41;
+    --tm-file_read-accent: #1f9d81;
+    --tm-file_edit-bg: #fcf5e8;
+    --tm-file_edit-border: #ebd3a7;
+    --tm-file_edit-fg: #6e4511;
+    --tm-file_edit-accent: #c98a2b;
+    --tm-search-bg: #f1f4f8;
+    --tm-search-border: #cfd8e3;
+    --tm-search-fg: #2d3b4e;
+    --tm-search-accent: #64748b;
+    --tm-model-bg: #f3f1fc;
+    --tm-model-border: #d5cef5;
+    --tm-model-fg: #3b2e6b;
+    --tm-model-accent: #7c6fd6;
+    --tm-agent-bg: #edf6f9;
+    --tm-agent-border: #bddfea;
+    --tm-agent-fg: #1b4959;
+    --tm-agent-accent: #3a8ca3;
+    --tm-other-bg: #f4f4f6;
+    --tm-other-border: #d8dce2;
+    --tm-other-fg: #3f4550;
+    --tm-other-accent: #8c95a4;
+    --swarm-0: #64748b;
+    --swarm-1: #3b6ce7;
+    --swarm-2: #1f9d81;
+    --swarm-3: #c98a2b;
+    --swarm-4: #7c6fd6;
+    --swarm-5: #3a8ca3;
+    --swarm-6: #c46c7b;
+  }
+
+  :root.dark-surface {
+    --bg-canvas: var(--background, #13151a);
+    --surface: #1a1d24;
+    --surface-subtle: #222630;
+    --surface-hover: #282d39;
+    --surface-active: #2f3544;
+    --seg-bg: #1e222b;
+    --seg-active-bg: #2b303d;
+    --seg-active-shadow: 0 1px 2px rgba(0, 0, 0, 0.30);
+    --line: rgba(255, 255, 255, 0.085);
+    --line-subtle: rgba(255, 255, 255, 0.055);
+    --line-strong: rgba(255, 255, 255, 0.16);
+    --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.24);
+    --track: rgba(255, 255, 255, 0.10);
+    --empty-dot: rgba(255, 255, 255, 0.13);
+    --fg: var(--foreground, #eef1f6);
+    --fg-secondary: #b4bcc9;
+    --dim: var(--muted-foreground, #8b94a5);
+    --muted: #656e7f;
+    --tooltip-bg: rgba(26, 29, 36, 0.96);
+    --tooltip-border: rgba(255, 255, 255, 0.12);
+    --tooltip-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+    --accent: #6b93f2;
+    --accent-fg: #8cb0f8;
+    --accent-bg: rgba(107, 147, 242, 0.15);
+    --accent-border: rgba(107, 147, 242, 0.34);
+    --ok: #2cb593;
+    --ok-fg: #4fd1af;
+    --ok-bg: rgba(44, 181, 147, 0.14);
+    --warn: #e0a043;
+    --warn-fg: #f0b95e;
+    --warn-bg: rgba(224, 160, 67, 0.15);
+    --warn-border: rgba(224, 160, 67, 0.34);
+    --danger: #e46464;
+    --danger-fg: #f28484;
+    --danger-bg: rgba(228, 100, 100, 0.16);
+    --danger-border: rgba(228, 100, 100, 0.36);
+    --viz-cache: #4666a8;
+    --viz-input: #6b93f2;
+    --viz-output: #e0a043;
+    --viz-grid: rgba(255, 255, 255, 0.07);
+    --ctx-system: #7b8799;
+    --ctx-systools: #94a3b8;
+    --ctx-skills: #9a8fe2;
+    --ctx-subagents: #b2a9ec;
+    --ctx-other: #c7c0f2;
+    --ctx-sysmsg: #e47d7d;
+    --ctx-user: #7aa3eb;
+    --ctx-agent: #5b87ef;
+    --ctx-tool: #e0a043;
+    --tm-command-bg: #1c263b;
+    --tm-command-border: #2e4268;
+    --tm-command-fg: #dce8fc;
+    --tm-command-accent: #6b93f2;
+    --tm-file_read-bg: #172b27;
+    --tm-file_read-border: #254d44;
+    --tm-file_read-fg: #d5f2e9;
+    --tm-file_read-accent: #2cb593;
+    --tm-file_edit-bg: #2d2518;
+    --tm-file_edit-border: #544123;
+    --tm-file_edit-fg: #f7e2be;
+    --tm-file_edit-accent: #e0a043;
+    --tm-search-bg: #222731;
+    --tm-search-border: #374050;
+    --tm-search-fg: #dce3ed;
+    --tm-search-accent: #8a99ad;
+    --tm-model-bg: #252236;
+    --tm-model-border: #403861;
+    --tm-model-fg: #e3defa;
+    --tm-model-accent: #9a8fe2;
+    --tm-agent-bg: #182a31;
+    --tm-agent-border: #294c59;
+    --tm-agent-fg: #d0ecf4;
+    --tm-agent-accent: #56abc4;
+    --tm-other-bg: #25272d;
+    --tm-other-border: #3d414b;
+    --tm-other-fg: #dfe3ea;
+    --tm-other-accent: #9ca4b3;
+    --swarm-0: #7b8799;
+    --swarm-1: #6b93f2;
+    --swarm-2: #2cb593;
+    --swarm-3: #e0a043;
+    --swarm-4: #9a8fe2;
+    --swarm-5: #56abc4;
+    --swarm-6: #d98292;
+  }
+
   * { box-sizing: border-box; }
   ::selection {
-    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
     color: var(--fg);
   }
   :focus-visible {
@@ -47,29 +394,53 @@
   body {
     margin: 0;
     color: var(--fg);
-    background: var(--bg);
+    background: var(--bg-canvas);
+    caret-color: var(--accent);
     font: 12.5px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
     -webkit-font-smoothing: antialiased;
   }
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
   ::-webkit-scrollbar-thumb {
-    background: color-mix(in srgb, var(--fg) 16%, transparent);
+    background: color-mix(in srgb, var(--fg) 15%, transparent);
     border-radius: 999px;
   }
-  ::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--fg) 28%, transparent); }
+  ::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--fg) 26%, transparent); }
 
-  main { padding: 12px 14px 20px; overflow-x: clip; }
-  .num { font-variant-numeric: tabular-nums; }
+  main { padding: 10px 12px 18px; overflow-x: clip; }
+  .num {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
   .dim { color: var(--dim); }
+  .val-unit {
+    font-size: 0.64em;
+    font-weight: 500;
+    color: var(--dim);
+    margin-left: 1px;
+    letter-spacing: 0;
+  }
+  .val-unit-sp { font-size: 0.56em; }
+  .val-prefix {
+    font-size: 0.74em;
+    font-weight: 500;
+    opacity: 0.72;
+    margin-right: 1px;
+  }
+  .sub-ctx .val-unit,
+  .turn-spd .val-unit,
+  .model-bar-top .val-unit { font-size: 0.78em; }
+  .sub-ctx .val-prefix,
+  .model-bar-top .val-prefix { font-size: 0.82em; }
 
-  /* Segmented Control */
+  /* Segmented Control (Primary Tabs & Time Range) */
   .seg-bar {
     display: inline-flex;
+    align-items: center;
     padding: 2px;
     border-radius: 8px;
-    background: var(--surface);
-    border: 1px solid var(--line);
+    background: var(--seg-bg);
+    border: 1px solid var(--line-subtle);
     gap: 2px;
   }
   .seg-btn {
@@ -79,53 +450,127 @@
     font: inherit;
     font-size: 11.5px;
     font-weight: 500;
-    padding: 3px 10px;
+    padding: 3px 9px;
     border-radius: 6px;
     cursor: pointer;
-    transition: all 0.14s ease;
+    white-space: nowrap;
+    transition: color 0.14s ease, background-color 0.14s ease, box-shadow 0.14s ease, transform 0.1s ease;
   }
   .seg-btn:hover { color: var(--fg); }
   .seg-btn:active { transform: scale(0.97); }
   .seg-btn.active {
-    background: var(--surface-hover);
+    background: var(--seg-active-bg);
     color: var(--fg);
     font-weight: 600;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
-  }
-  .filter-bar {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin-bottom: 10px;
-  }
-  .filter-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 6px 8px;
+    box-shadow: var(--seg-active-shadow);
   }
   .seg-bar.seg-sm {
     border-radius: 7px;
   }
   .seg-bar.seg-sm .seg-btn {
     font-size: 11px;
-    padding: 2px 8px;
+    padding: 2px 7px;
     border-radius: 5px;
   }
+
+  /* Lightweight Borderless Toggle (Secondary Filters) */
+  .ghost-seg {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .ghost-btn {
+    border: none;
+    background: transparent;
+    color: var(--dim);
+    font: inherit;
+    font-size: 11px;
+    font-weight: 450;
+    padding: 3px 6px;
+    border-radius: 5px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color 0.14s ease, background-color 0.14s ease, transform 0.1s ease;
+  }
+  .ghost-btn:hover {
+    color: var(--fg);
+    background: var(--surface-subtle);
+  }
+  .ghost-btn:active { transform: scale(0.97); }
+  .ghost-btn.active {
+    color: var(--fg);
+    font-weight: 600;
+    background: var(--surface-hover);
+  }
+  .ghost-currency { transition: opacity 0.15s ease; }
+  .ghost-currency.is-muted { opacity: 0.68; }
+  .ghost-currency.is-muted:hover,
+  .ghost-currency.is-muted:focus-within { opacity: 1; }
+  .ghost-currency .ghost-btn { padding: 3px 5px; font-weight: 500; }
+
+  .tool-div {
+    width: 1px;
+    height: 12px;
+    background: var(--line);
+    flex: none;
+  }
+
+  /* Compact 2-Row Top Control */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    min-height: 28px;
+    margin-bottom: 8px;
+  }
+  .header-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    flex: none;
+  }
+  .filter-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-height: 26px;
+    margin-bottom: 10px;
+  }
+  .filter-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+
   .model-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    padding: 6px 11px;
-    border-bottom: 1px solid var(--line);
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--line-subtle);
     font-size: 11.5px;
   }
   .model-row:last-child { border-bottom: none; }
   .model-bar-wrap { flex: 1; min-width: 0; }
-  .model-bar-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 17px; margin-bottom: 4px; }
-  .model-bar-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .model-bar-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 17px;
+    margin-bottom: 5px;
+  }
+  .model-bar-name {
+    font-weight: 500;
+    color: var(--fg);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .model-bar { height: 4px; border-radius: 999px; background: var(--track); overflow: hidden; }
   .model-bar > div { height: 100%; border-radius: 999px; background: var(--accent); transition: width 0.55s cubic-bezier(0.25, 1, 0.5, 1); }
   .model-bar.cost-bar > div { background: var(--warn); }
@@ -144,8 +589,9 @@
   .chart-card {
     background: var(--surface);
     border: 1px solid var(--line);
+    box-shadow: var(--card-shadow);
     border-radius: 10px;
-    padding: 10px 11px;
+    padding: 11px 12px;
     margin-bottom: 10px;
   }
   .chart-head {
@@ -153,70 +599,92 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    min-height: 17px;
+    min-height: 18px;
     margin-bottom: 8px;
   }
-  .chart-title { font-size: 11.5px; font-weight: 600; color: var(--fg); }
+  .chart-title { font-size: 11.5px; font-weight: 600; color: var(--fg); letter-spacing: -0.005em; }
   .chart-svg { width: 100%; display: block; overflow: visible; }
-  .chart-legend {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px 12px;
-    margin-top: 6px;
-    font-size: 10.5px;
-    color: var(--dim);
-  }
-  .chart-leg-item { display: inline-flex; align-items: center; gap: 4px; }
-  .chart-leg-dot { width: 7px; height: 7px; border-radius: 2px; flex: none; }
-  /* Tool Treemap */
   .tm-pill-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+  .tm-list { margin: 2px -12px -11px; border-top: 1px solid var(--line-subtle); }
 
-  /* Header */
-  .header {
-    display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    margin-bottom: 10px;
-  }
+  /* Session Sub-header */
   .session-head {
-    display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    min-height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 26px;
     margin-bottom: 10px;
   }
   .session-title {
-    min-width: 0; flex: 1;
-    font-size: 12px; font-weight: 600; color: var(--fg);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    min-width: 0;
+    flex: 1;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--fg);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     text-align: right;
   }
   .model-badge {
-    display: inline-flex; align-items: center; gap: 7px; min-width: 0; max-width: 58%; flex: 0 1 auto;
-    padding: 4px 10px 4px 8px; border-radius: 999px;
-    background: var(--surface); border: 1px solid var(--line);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    max-width: 58%;
+    flex: 0 1 auto;
+    padding: 3px 9px 3px 7px;
+    border-radius: 999px;
+    background: var(--surface);
+    border: 1px solid var(--line);
   }
-  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex: none; }
-  .dot.running { box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); animation: pulse 1.4s ease-in-out infinite; }
-  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); flex: none; }
+  .dot.running { animation: pulse 1.5s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.38; } }
   .model-name {
-    font-weight: 600; font-size: 12px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font-weight: 600;
+    font-size: 11.5px;
+    color: var(--fg);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .icon-btn {
-    display: inline-flex; align-items: center; justify-content: center; gap: 4px;
-    height: 26px; padding: 0 9px; border-radius: 7px;
-    font: inherit; font-size: 11.5px; color: var(--dim);
-    background: var(--surface); border: 1px solid var(--line);
-    cursor: pointer; transition: all 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    height: 26px;
+    padding: 0 8px;
+    border-radius: 7px;
+    font: inherit;
+    font-size: 11.5px;
+    color: var(--dim);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    cursor: pointer;
+    transition: color 0.14s ease, background-color 0.14s ease, border-color 0.14s ease, transform 0.1s ease;
   }
-  .icon-btn:hover:not(:disabled) { color: var(--fg); background: var(--surface-hover); border-color: color-mix(in srgb, var(--fg) 20%, transparent); }
+  .icon-btn.icon-only {
+    width: 26px;
+    padding: 0;
+  }
+  .icon-btn:hover:not(:disabled) {
+    color: var(--fg);
+    background: var(--surface-subtle);
+    border-color: var(--line-strong);
+  }
   .icon-btn:active:not(:disabled),
   .back-btn:active,
   .hero-alert-btn:active { transform: scale(0.97); }
-  .icon-btn:disabled { opacity: 0.4; cursor: default; }
+  .icon-btn:disabled { opacity: 0.42; cursor: default; }
   .icon-btn svg { width: 13px; height: 13px; }
   .icon-btn.active {
-    color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
-    border-color: color-mix(in srgb, var(--accent) 32%, transparent);
+    color: var(--accent-fg);
+    background: var(--accent-bg);
+    border-color: var(--accent-border);
   }
   .icon-btn.primary {
     color: #fff;
@@ -229,11 +697,14 @@
     background: color-mix(in srgb, var(--accent) 88%, #000);
     border-color: var(--accent);
   }
+
+  /* Settings View */
   .settings-card {
     background: var(--surface);
     border: 1px solid var(--line);
+    box-shadow: var(--card-shadow);
     border-radius: 10px;
-    padding: 10px 11px;
+    padding: 11px 12px;
     margin-bottom: 10px;
   }
   .settings-note {
@@ -259,10 +730,11 @@
     padding: 0 7px;
     border-radius: 6px;
     border: 1px solid var(--line);
-    background: var(--bg);
+    background: var(--bg-canvas);
     color: var(--fg);
     font: inherit;
     font-size: 11.5px;
+    transition: border-color 0.14s ease;
   }
   .field-input:focus {
     outline: 1.5px solid var(--accent);
@@ -277,7 +749,7 @@
     border: 1px solid var(--line);
     border-radius: 8px;
     padding: 8px 9px;
-    background: color-mix(in srgb, var(--fg) 1.5%, transparent);
+    background: var(--surface-subtle);
   }
   .price-rule-head {
     display: grid;
@@ -287,6 +759,9 @@
     margin-bottom: 6px;
   }
   .price-rule-del {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     width: 24px;
     height: 24px;
     padding: 0;
@@ -295,12 +770,12 @@
     background: transparent;
     color: var(--dim);
     cursor: pointer;
-    font-size: 14px;
-    line-height: 1;
+    transition: color 0.14s ease, background-color 0.14s ease;
   }
+  .price-rule-del svg { width: 12px; height: 12px; }
   .price-rule-del:hover {
-    color: var(--danger);
-    background: color-mix(in srgb, var(--danger) 10%, transparent);
+    color: var(--danger-fg);
+    background: var(--danger-bg);
   }
   .price-grid {
     display: grid;
@@ -327,76 +802,95 @@
   }
   .settings-status {
     font-size: 11px;
-    color: var(--ok);
+    color: var(--ok-fg);
   }
   .settings-status.err {
-    color: var(--danger);
+    color: var(--danger-fg);
   }
   .icon-btn.loading svg { animation: spin 0.7s linear infinite; }
   @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
   .back-bar {
-    display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    margin-bottom: 10px; padding: 6px 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding: 6px 10px;
     border-radius: 8px;
-    background: color-mix(in srgb, var(--accent) 8%, transparent);
-    border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+    background: var(--accent-bg);
+    border: 1px solid var(--accent-border);
     font-size: 11.5px;
   }
   .back-btn {
-    display: inline-flex; align-items: center; gap: 4px;
-    padding: 2px 8px; border-radius: 6px;
-    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
-    background: var(--surface); color: var(--accent);
-    font: inherit; font-size: 11px; font-weight: 600; cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--accent-border);
+    background: var(--surface);
+    color: var(--accent-fg);
+    font: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.14s ease, transform 0.1s ease;
   }
-  .back-btn:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .back-btn svg { width: 11px; height: 11px; }
+  .back-btn:hover { background: var(--surface-subtle); }
 
   /* Hero Context Card with 100-dot grid */
   .hero {
     background: var(--surface);
-    border: 1px solid color-mix(in srgb, var(--fg) 14%, transparent);
-    box-shadow: 0 2px 10px color-mix(in srgb, var(--fg) 4%, transparent);
-    border-radius: 12px;
-    padding: 14px 14px 12px;
-    margin-bottom: 12px;
+    border: 1px solid var(--line);
+    box-shadow: var(--card-shadow);
+    border-radius: 10px;
+    padding: 12px 12px 10px;
+    margin-bottom: 10px;
   }
-  .hero-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 21px; }
+  .hero-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 20px; }
   .hero-label { font-size: 11.5px; font-weight: 500; color: var(--dim); }
   .pct-pill {
-    font-size: 11.5px; font-weight: 600; padding: 1px 8px; border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 1px 7px;
+    border-radius: 999px;
     border: 1px solid transparent;
   }
-  .hero-nums { display: flex; align-items: baseline; gap: 6px; margin: 4px 0 11px; }
-  .hero-used { font-size: 28px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.1; }
-  .hero-max { font-size: 12.5px; color: var(--dim); }
+  .pct-pill.tone-accent { color: var(--accent-fg); background: var(--accent-bg); border-color: var(--accent-border); }
+  .pct-pill.tone-warn { color: var(--warn-fg); background: var(--warn-bg); border-color: var(--warn-border); }
+  .pct-pill.tone-crit { color: var(--danger-fg); background: var(--danger-bg); border-color: var(--danger-border); }
+  .hero-nums { display: flex; align-items: baseline; gap: 5px; margin: 4px 0 11px; }
+  .hero-used { font-size: 26px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.1; color: var(--fg); }
+  .hero-max { font-size: 12px; color: var(--dim); }
 
   .dot-grid {
     display: grid;
     grid-template-columns: repeat(20, minmax(0, 1fr));
     gap: 4px;
     max-width: 320px;
-    margin-bottom: 12px;
+    margin-bottom: 11px;
   }
   .ctx-dot {
     aspect-ratio: 1;
     border-radius: 50%;
     background: var(--empty-dot);
-    transition: transform 0.25s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.25s ease;
+    transition: transform 0.22s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.22s ease;
   }
   .dot-grid.animate-in .ctx-dot {
-    animation: dotIn 0.52s cubic-bezier(0.25, 1, 0.5, 1) both;
+    animation: dotIn 0.48s cubic-bezier(0.25, 1, 0.5, 1) both;
     animation-delay: var(--dot-delay, 0ms);
   }
   @keyframes dotIn {
     from { opacity: 0; transform: scale(0.45); }
     to { opacity: 1; transform: scale(1); }
   }
-  .hero.has-hover .ctx-dot { opacity: 0.24; }
+  .hero.has-hover .ctx-dot { opacity: 0.22; }
   .hero.has-hover .ctx-dot.is-match { opacity: 1; transform: scale(1.22); }
 
   .cat-list {
-    border-top: 1px solid var(--line);
+    border-top: 1px solid var(--line-subtle);
     padding-top: 7px;
     display: flex;
     flex-direction: column;
@@ -404,19 +898,22 @@
   }
   .cat-row {
     display: grid;
-    grid-template-columns: 10px 1fr auto 42px;
+    grid-template-columns: 10px 1fr auto 44px;
     align-items: center;
     gap: 7px;
     min-height: 23px;
     font-size: 11.5px;
-    padding: 3px 5px;
-    margin: 0 -5px;
+    padding: 3px 6px;
+    margin: 0 -6px;
     border-radius: 6px;
     cursor: default;
     transition: background-color 0.14s ease;
   }
-  .cat-row.is-match { background: var(--surface-hover); }
+  .cat-row.is-match { background: var(--surface-subtle); }
   .cat-more-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     align-self: flex-start;
     margin-top: 2px;
     padding: 2px 6px;
@@ -430,10 +927,12 @@
     cursor: pointer;
     transition: color 0.14s ease, background-color 0.14s ease;
   }
-  .cat-more-btn:hover { color: var(--fg); background: var(--surface-hover); }
+  .cat-more-btn:hover { color: var(--fg); background: var(--surface-subtle); }
+  .cat-more-btn svg { width: 11px; height: 11px; transition: transform 0.2s ease; }
+  .cat-more-btn[aria-expanded="true"] svg { transform: rotate(180deg); }
   .cat-mark { width: 7px; height: 7px; border-radius: 50%; justify-self: center; }
   .cat-mark.free { background: transparent; border: 1.5px solid var(--empty-dot); }
-  .cat-tok { text-align: right; font-weight: 500; }
+  .cat-tok { text-align: right; font-weight: 500; color: var(--fg); }
   .cat-pct { text-align: right; color: var(--dim); font-size: 11px; }
 
   .hero-alert {
@@ -449,14 +948,14 @@
     line-height: 1.4;
   }
   .hero-alert.warn {
-    background: color-mix(in srgb, var(--warn) 12%, transparent);
-    border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+    background: var(--warn-bg);
+    border: 1px solid var(--warn-border);
     color: var(--warn-fg);
   }
   .hero-alert.crit {
-    background: color-mix(in srgb, var(--danger) 12%, transparent);
-    border: 1px solid color-mix(in srgb, var(--danger) 38%, transparent);
-    color: var(--danger);
+    background: var(--danger-bg);
+    border: 1px solid var(--danger-border);
+    color: var(--danger-fg);
   }
   .hero-alert-btn {
     flex: none;
@@ -469,7 +968,7 @@
     padding: 2px 8px;
     border-radius: 6px;
     cursor: pointer;
-    transition: background-color 0.14s ease;
+    transition: background-color 0.14s ease, transform 0.1s ease;
   }
   .hero-alert-btn:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
 
@@ -481,14 +980,15 @@
     margin-bottom: 10px;
     padding: 7px 10px;
     border-radius: 8px;
-    background: color-mix(in srgb, var(--danger) 10%, transparent);
-    border: 1px solid color-mix(in srgb, var(--danger) 32%, transparent);
-    color: var(--danger);
+    background: var(--danger-bg);
+    border: 1px solid var(--danger-border);
+    color: var(--danger-fg);
     font-size: 11.5px;
   }
   .empty-card {
     background: var(--surface);
     border: 1px solid var(--line);
+    box-shadow: var(--card-shadow);
     border-radius: 10px;
     padding: 24px 16px;
     text-align: center;
@@ -507,96 +1007,174 @@
     margin-bottom: 10px;
     padding: 6px 9px;
     border-radius: 8px;
-    background: color-mix(in srgb, var(--accent) 8%, transparent);
-    border: 1px dashed color-mix(in srgb, var(--accent) 35%, transparent);
+    background: var(--accent-bg);
+    border: 1px dashed var(--accent-border);
     font-size: 11px;
   }
-  .mock-tag { font-weight: 600; color: var(--accent); }
+  .mock-tag { font-weight: 600; color: var(--accent-fg); }
 
-  /* Bento KPI Grid */
-  .bento { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+  /* Unified 2x2 Bento KPI Card (Hairline Inner Dividers) */
+  .bento {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1px;
+    background: var(--line-subtle);
+    border: 1px solid var(--line);
+    box-shadow: var(--card-shadow);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 10px;
+  }
   .kpi {
     background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    padding: 9px 11px;
-    transition: border-color 0.15s ease;
+    padding: 11px 12px;
+    transition: background-color 0.14s ease;
   }
-  .kpi:hover { border-color: color-mix(in srgb, var(--fg) 18%, transparent); }
-  .kpi-head { display: flex; align-items: center; justify-content: space-between; min-height: 16px; font-size: 11px; color: var(--dim); margin-bottom: 4px; }
+  .kpi:hover { background: var(--surface-subtle); }
+  .kpi-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    min-height: 16px;
+    font-size: 11px;
+    color: var(--dim);
+    margin-bottom: 5px;
+  }
   .kpi-tag {
-    font-size: 10px; padding: 0 5px; border-radius: 4px;
-    background: var(--track); color: var(--dim);
+    font-size: 10.5px;
+    font-weight: 450;
+    color: var(--dim);
+    opacity: 0.85;
+    white-space: nowrap;
   }
-  .kpi-val { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; color: var(--fg); min-height: 26px; }
-  .kpi-sub { font-size: 11px; color: var(--dim); margin-top: 4px; line-height: 1.4; min-height: 15.5px; }
+  .kpi-val {
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    color: var(--fg);
+    min-height: 26px;
+    line-height: 1.25;
+  }
+  .kpi-sub {
+    font-size: 10.5px;
+    color: var(--dim);
+    margin-top: 4px;
+    line-height: 1.4;
+    min-height: 15px;
+  }
   .stage-skeleton .kpi-val,
   .stage-skeleton .kpi-sub,
   .skel-crossfade-out .kpi-val,
   .skel-crossfade-out .kpi-sub { display: flex; align-items: center; }
 
-  /* Subagents Section */
+  /* Subagents & Lists Section */
   .sub-card {
     background: var(--surface);
     border: 1px solid var(--line);
+    box-shadow: var(--card-shadow);
     border-radius: 10px;
     overflow: hidden;
     margin-bottom: 10px;
   }
-  .sub-list { border-top: 1px solid var(--line); }
+  .sub-list { border-top: 1px solid var(--line-subtle); }
   .sub-row {
-    display: flex; align-items: center; justify-content: space-between; gap: 10px;
-    padding: 8px 11px;
-    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--line-subtle);
     cursor: pointer;
-    transition: background-color 0.12s ease;
+    transition: background-color 0.14s ease;
   }
   .sub-row:last-child { border-bottom: none; }
-  .sub-row:hover { background: var(--surface-hover); }
+  .sub-row:hover { background: var(--surface-subtle); }
+  .rank-idx {
+    flex: none;
+    width: 16px;
+    font-size: 10.5px;
+    font-weight: 500;
+    color: var(--muted);
+    text-align: right;
+  }
   .sub-left { min-width: 0; flex: 1; }
-  .sub-title { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; }
+  .sub-title { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--fg); }
   .sub-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); flex: none; }
-  .sub-dot.running { box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); animation: pulse 1.4s ease-in-out infinite; }
+  .sub-dot.running { animation: pulse 1.5s ease-in-out infinite; }
   .sub-dot.killed { background: var(--dim); }
   .sub-role { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .sub-meta { font-size: 11px; color: var(--dim); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .sub-right { text-align: right; flex: none; min-width: 78px; }
-  .sub-ctx { font-size: 11.5px; font-weight: 600; }
+  .sub-meta { font-size: 10.5px; color: var(--dim); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sub-right { text-align: right; flex: none; min-width: 72px; }
+  .sub-ctx { font-size: 11.5px; font-weight: 600; color: var(--fg); }
+  .sub-ctx.tone-accent { color: var(--accent-fg); }
+  .sub-ctx.tone-warn { color: var(--warn-fg); }
+  .sub-ctx.tone-crit { color: var(--danger-fg); }
   .sub-bar { height: 4px; border-radius: 999px; background: var(--track); overflow: hidden; margin-top: 4px; }
   .sub-bar > div { height: 100%; border-radius: 999px; transition: width 0.55s cubic-bezier(0.25, 1, 0.5, 1); }
+  .row-chevron {
+    width: 12px;
+    height: 12px;
+    flex: none;
+    color: var(--dim);
+    opacity: 0.28;
+    transition: opacity 0.14s ease, transform 0.14s ease;
+  }
+  .sub-row:hover .row-chevron,
+  .sub-row:focus-visible .row-chevron {
+    opacity: 0.85;
+    transform: translateX(2px);
+  }
 
   .swarm-dist {
-    padding: 9px 11px;
-    border-top: 1px solid var(--line);
-    border-bottom: 1px solid var(--line);
-    background: color-mix(in srgb, var(--fg) 1.5%, transparent);
+    padding: 9px 12px;
+    border-top: 1px solid var(--line-subtle);
+    border-bottom: 1px solid var(--line-subtle);
+    background: var(--surface-subtle);
   }
   .swarm-dist-head {
-    display: flex; justify-content: space-between; align-items: center;
-    font-size: 11px; color: var(--dim); margin-bottom: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+    color: var(--dim);
+    margin-bottom: 6px;
   }
   .swarm-stack {
-    display: flex; height: 7px; border-radius: 999px; overflow: hidden; gap: 1.5px;
-    background: var(--track); margin-bottom: 7px;
+    display: flex;
+    height: 6px;
+    border-radius: 999px;
+    overflow: hidden;
+    gap: 1.5px;
+    background: var(--track);
+    margin-bottom: 7px;
   }
   .swarm-seg { height: 100%; min-width: 3px; }
   .swarm-legend {
-    display: flex; flex-wrap: wrap; gap: 4px 10px;
-    font-size: 10.5px; color: var(--dim);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    font-size: 10.5px;
+    color: var(--dim);
   }
   .swarm-leg-item { display: inline-flex; align-items: center; gap: 4px; }
   .swarm-leg-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
   .state-pill {
-    font-size: 10px; font-weight: 500; padding: 0 5px; border-radius: 4px; flex: none;
+    font-size: 10px;
+    font-weight: 500;
+    padding: 0 5px;
+    border-radius: 4px;
+    flex: none;
   }
-  .state-pill.running { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
-  .state-pill.idle { color: var(--dim); background: var(--track); }
-  .state-pill.killed { color: var(--dim); opacity: 0.7; background: var(--track); }
+  .state-pill.running { color: var(--ok-fg); background: var(--ok-bg); }
+  .state-pill.idle { color: var(--dim); background: var(--surface-subtle); border: 1px solid var(--line-subtle); }
+  .state-pill.killed { color: var(--dim); opacity: 0.7; background: var(--surface-subtle); }
 
   /* Collapsible & Paginated Turns */
   .turns-card {
     background: var(--surface);
     border: 1px solid var(--line);
+    box-shadow: var(--card-shadow);
     border-radius: 10px;
     overflow: hidden;
   }
@@ -607,7 +1185,7 @@
     align-items: center;
     justify-content: space-between;
     min-height: 36px;
-    padding: 9px 11px;
+    padding: 9px 12px;
     border: none;
     background: transparent;
     color: var(--fg);
@@ -619,36 +1197,40 @@
     cursor: pointer;
     transition: background-color 0.12s ease;
   }
-  .turns-toggle:hover { background: var(--surface-hover); }
+  .turns-toggle:hover { background: var(--surface-subtle); }
   .turns-toggle-left { display: inline-flex; align-items: center; gap: 6px; }
-  .chevron { width: 13px; height: 13px; color: var(--dim); transition: transform 0.35s cubic-bezier(0.25, 1, 0.5, 1); }
+  .chevron { width: 13px; height: 13px; color: var(--dim); transition: transform 0.28s cubic-bezier(0.25, 1, 0.5, 1); }
   .chevron.open { transform: rotate(90deg); }
 
-  .turn-list { border-top: 1px solid var(--line); }
-  .turn-item { border-bottom: 1px solid var(--line); }
+  .turn-list { border-top: 1px solid var(--line-subtle); }
+  .turn-item { border-bottom: 1px solid var(--line-subtle); }
   .turn-item:last-child { border-bottom: none; }
   .turn-row {
-    display: flex; align-items: center; justify-content: space-between; gap: 10px;
-    padding: 8px 11px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 12px;
     cursor: pointer;
     transition: background-color 0.12s ease;
   }
-  .turn-row:hover { background: var(--surface-hover); }
+  .turn-row:hover { background: var(--surface-subtle); }
+  .turn-row[aria-expanded="true"] { background: var(--surface-subtle); }
   .turn-detail {
     display: flex;
     flex-wrap: wrap;
     gap: 4px 12px;
-    padding: 6px 11px 8px;
-    border-top: 1px dashed var(--line);
-    background: color-mix(in srgb, var(--fg) 2%, transparent);
+    padding: 6px 12px 8px 52px;
+    border-top: 1px solid var(--line-subtle);
+    background: var(--surface-subtle);
     font-size: 10.5px;
     color: var(--dim);
   }
   .turn-detail:not([hidden]) {
-    animation: revealDown 0.38s cubic-bezier(0.25, 1, 0.5, 1) both;
+    animation: revealDown 0.28s cubic-bezier(0.25, 1, 0.5, 1) both;
   }
   @keyframes revealDown {
-    from { opacity: 0; transform: translateY(-6px); }
+    from { opacity: 0; transform: translateY(-4px); }
     to { opacity: 1; transform: translateY(0); }
   }
   .view-stage {
@@ -693,7 +1275,7 @@
   .stage-layer.data-crossfade-in {
     position: relative;
     z-index: 1;
-    animation: dataCrossfadeIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: dataCrossfadeIn 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
   }
   @keyframes stageExitLeft {
     from { opacity: 1; transform: translateX(0); }
@@ -728,10 +1310,10 @@
     to { opacity: 1; }
   }
   .anim-reveal {
-    animation: panelReveal 0.45s cubic-bezier(0.25, 1, 0.5, 1) both;
+    animation: panelReveal 0.36s cubic-bezier(0.25, 1, 0.5, 1) both;
   }
   @keyframes panelReveal {
-    from { opacity: 0; transform: translateY(-8px); }
+    from { opacity: 0; transform: translateY(-6px); }
     to { opacity: 1; transform: translateY(0); }
   }
 
@@ -741,36 +1323,52 @@
     position: relative;
     overflow: hidden;
     border-radius: 6px;
-    background: color-mix(in srgb, var(--fg) 8%, transparent);
+    background: var(--track);
   }
   .skel::after {
     content: "";
     position: absolute;
     inset: 0;
     transform: translateX(-100%);
-    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--fg) 7%, transparent), transparent);
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--fg) 6%, transparent), transparent);
     animation: skelShimmer 1.8s ease-in-out infinite;
   }
   @keyframes skelShimmer {
     100% { transform: translateX(100%); }
   }
-  .skel-pill { height: 20px; border-radius: 999px; }
-  .skel-badge { height: 27px; border-radius: 999px; }
+  .skel-pill { height: 19px; border-radius: 999px; }
+  .skel-badge { height: 25px; border-radius: 999px; }
   .skel-line { height: 11px; }
-  .skel-tag { height: 15px; width: 32px; border-radius: 4px; }
+  .skel-tag { height: 13px; width: 32px; border-radius: 4px; }
   .skel-val { height: 20px; width: 68px; }
-  .skel-hero-num { height: 31px; width: 148px; }
+  .skel-hero-num { height: 29px; width: 148px; }
   .skel-chart { height: 152px; border-radius: 8px; }
   .turn-detail[hidden] { display: none; }
   .turn-left { min-width: 0; flex: 1; }
   .turn-title { display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 500; }
   .turn-num {
-    font-size: 10.5px; font-weight: 600; color: var(--dim);
-    padding: 0 5px; border-radius: 4px; background: var(--track);
+    flex: none;
+    width: 34px;
+    text-align: center;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--dim);
+    padding: 1px 4px;
+    border-radius: 4px;
+    background: var(--surface-subtle);
+    border: 1px solid var(--line-subtle);
   }
   .turn-model { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg); }
-  .turn-sub { font-size: 11px; color: var(--dim); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .turn-right { text-align: right; flex: none; }
+  .turn-sub {
+    font-size: 10.5px;
+    color: var(--dim);
+    margin-top: 2px;
+    padding-left: 40px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .turn-right { text-align: right; flex: none; min-width: 78px; }
   .turn-spd { font-size: 12px; font-weight: 600; color: var(--fg); }
   .turn-dur { font-size: 10.5px; color: var(--dim); margin-top: 1px; }
 
@@ -778,8 +1376,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 7px 11px;
-    border-top: 1px solid var(--line);
+    padding: 7px 12px;
+    border-top: 1px solid var(--line-subtle);
     font-size: 11px;
     color: var(--dim);
   }
@@ -788,9 +1386,13 @@
 
   .empty { text-align: center; padding: 40px 14px; color: var(--dim); }
   footer {
-    margin-top: 12px; padding: 0 2px;
-    font-size: 11px; color: var(--dim);
-    display: flex; justify-content: space-between; gap: 8px;
+    margin-top: 12px;
+    padding: 0 2px;
+    font-size: 10.5px;
+    color: var(--dim);
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
   }
   @media (prefers-reduced-motion: reduce) {
     .dot.running,
@@ -804,9 +1406,12 @@
       animation: none;
     }
     .seg-btn,
+    .ghost-btn,
+    .ghost-currency,
     .icon-btn,
     .kpi,
     .sub-row,
+    .row-chevron,
     .turns-toggle,
     .chevron,
     .turn-row,
@@ -814,15 +1419,19 @@
     .ctx-dot,
     .cat-row,
     .cat-more-btn,
+    .cat-more-btn svg,
     .model-bar > div,
     .sub-bar > div {
       transition: none;
     }
     .seg-btn:active,
+    .ghost-btn:active,
     .icon-btn:active:not(:disabled),
     .back-btn:active,
     .hero-alert-btn:active,
-    .hero.has-hover .ctx-dot.is-match {
+    .hero.has-hover .ctx-dot.is-match,
+    .sub-row:hover .row-chevron,
+    .sub-row:focus-visible .row-chevron {
       transform: none;
     }
   }
@@ -912,6 +1521,39 @@
 
   loadUiState();
 
+  const CTX_KEYS = new Set(['system', 'systools', 'skills', 'subagents', 'other', 'sysmsg', 'user', 'agent', 'tool']);
+  const TREEMAP_KEYS = ['command', 'file_read', 'file_edit', 'search', 'model', 'agent', 'other'];
+
+  function resolveCtxKey(cat) {
+    if (cat?.key && CTX_KEYS.has(cat.key)) return cat.key;
+    const name = String(cat?.name || '');
+    if (name.includes('内置工具')) return 'systools';
+    if (name.includes('系统提示')) return 'system';
+    if (name.includes('Skills') || name.includes('思考') || name.includes('推理')) return 'skills';
+    if (name.includes('Subagents')) return 'subagents';
+    if (name.includes('系统通知')) return 'sysmsg';
+    if (name.includes('用户')) return 'user';
+    if (name.includes('Agent') || name.includes('对话历史')) return 'agent';
+    if (name.includes('工具')) return 'tool';
+    return 'other';
+  }
+
+  function resolveCtxVar(cat) {
+    return `var(--ctx-${resolveCtxKey(cat)})`;
+  }
+
+  function resolveTreemapKey(group) {
+    if (group?.key && TREEMAP_KEYS.includes(group.key)) return group.key;
+    const name = String(group?.name || '');
+    if (name.includes('命令')) return 'command';
+    if (name.includes('读取') || name.includes('读写')) return 'file_read';
+    if (name.includes('修改') || name.includes('编辑')) return 'file_edit';
+    if (name.includes('检索') || name.includes('网络')) return 'search';
+    if (name.includes('模型')) return 'model';
+    if (name.includes('代理')) return 'agent';
+    return 'other';
+  }
+
   function buildMockDots(categories, max) {
     const dots = new Array(100).fill(null);
     if (!max || max <= 0) return dots;
@@ -935,9 +1577,9 @@
     if (cid === 'sub-research-01' || cid === 'swarm-worker-1') {
       const max = 200000;
       const cats = [
-        { name: '系统提示与工具', tokens: 18000, pct: 9.0, color: '#64748b' },
-        { name: '对话历史', tokens: 24000, pct: 12.0, color: '#3b82f6' },
-        { name: '工具调用与文件', tokens: 38000, pct: 19.0, color: '#10b981' },
+        { key: 'system', name: '系统提示与工具', tokens: 18000, pct: 9.0, color: 'var(--ctx-system)' },
+        { key: 'agent', name: '对话历史', tokens: 24000, pct: 12.0, color: 'var(--ctx-agent)' },
+        { key: 'tool', name: '工具调用与文件', tokens: 38000, pct: 19.0, color: 'var(--ctx-tool)' },
       ];
       return {
         cascadeId: cid,
@@ -965,16 +1607,16 @@
     const max = 200000;
     const cats = isHigh
       ? [
-          { name: '系统提示与工具', tokens: 26000, pct: 13.0, color: '#64748b' },
-          { name: '对话历史', tokens: 78000, pct: 39.0, color: '#3b82f6' },
-          { name: '工具调用与文件', tokens: 64000, pct: 32.0, color: '#10b981' },
-          { name: '推理思考', tokens: 14000, pct: 7.0, color: '#a855f7' },
+          { key: 'system', name: '系统提示与工具', tokens: 26000, pct: 13.0, color: 'var(--ctx-system)' },
+          { key: 'agent', name: '对话历史', tokens: 78000, pct: 39.0, color: 'var(--ctx-agent)' },
+          { key: 'tool', name: '工具调用与文件', tokens: 64000, pct: 32.0, color: 'var(--ctx-tool)' },
+          { key: 'skills', name: '推理思考', tokens: 14000, pct: 7.0, color: 'var(--ctx-skills)' },
         ]
       : [
-          { name: '系统提示与工具', tokens: 24000, pct: 12.0, color: '#64748b' },
-          { name: '对话历史', tokens: 34000, pct: 17.0, color: '#3b82f6' },
-          { name: '工具调用与文件', tokens: 22000, pct: 11.0, color: '#10b981' },
-          { name: '推理思考', tokens: 6000, pct: 3.0, color: '#a855f7' },
+          { key: 'system', name: '系统提示与工具', tokens: 24000, pct: 12.0, color: 'var(--ctx-system)' },
+          { key: 'agent', name: '对话历史', tokens: 34000, pct: 17.0, color: 'var(--ctx-agent)' },
+          { key: 'tool', name: '工具调用与文件', tokens: 22000, pct: 11.0, color: 'var(--ctx-tool)' },
+          { key: 'skills', name: '推理思考', tokens: 6000, pct: 3.0, color: 'var(--ctx-skills)' },
         ];
     const used = cats.reduce((s, c) => s + c.tokens, 0);
     const pct = (used / max) * 100;
@@ -1011,11 +1653,57 @@
       cost: { total: 1.45, input: 0.28, cacheRead: 0.31, output: 0.86, savedByCache: 0.92, priced: true },
       totals: { all: 1296000, inputAll: 1210000, uncachedInput: 226000, cacheRead: 984000, output: 86000, thinking: 48200, response: 37800 },
       toolTreemap: {
-        totalTokens: 142000,
+        totalTokens: 148000,
         groups: [
-          { name: '文件读写', tokens: 68000, pct: 47.9, count: 16, color: '#93c5fd', items: [{ name: 'read_file', tokens: 44000, pct: 31.0, count: 11 }, { name: 'edit_file', tokens: 24000, pct: 16.9, count: 5 }] },
-          { name: '命令执行', tokens: 46000, pct: 32.4, count: 7, color: '#86efac', items: [{ name: 'run_command', tokens: 46000, pct: 32.4, count: 7 }] },
-          { name: '代码检索', tokens: 28000, pct: 19.7, count: 5, color: '#fde68a', items: [{ name: 'rg / grep', tokens: 28000, pct: 19.7, count: 5 }] },
+          {
+            key: 'file_read',
+            name: '读取文件',
+            tokens: 64000,
+            pct: 43.2,
+            count: 16,
+            items: [
+              { name: 'read_file', tokens: 56000, pct: 37.8, count: 12 },
+              { name: 'list_dir', tokens: 8000, pct: 5.4, count: 4 },
+            ],
+          },
+          {
+            key: 'command',
+            name: '命令执行',
+            tokens: 42000,
+            pct: 28.4,
+            count: 7,
+            items: [{ name: 'run_command', tokens: 42000, pct: 28.4, count: 7 }],
+          },
+          {
+            key: 'file_edit',
+            name: '文件修改',
+            tokens: 24000,
+            pct: 16.2,
+            count: 5,
+            items: [
+              { name: 'edit_file', tokens: 20500, pct: 13.8, count: 4 },
+              { name: 'write_file', tokens: 3500, pct: 2.4, count: 1 },
+            ],
+          },
+          {
+            key: 'search',
+            name: '检索与网络',
+            tokens: 13500,
+            pct: 9.1,
+            count: 5,
+            items: [
+              { name: 'rg / grep', tokens: 11200, pct: 7.6, count: 4 },
+              { name: 'search_web', tokens: 2300, pct: 1.5, count: 1 },
+            ],
+          },
+          {
+            key: 'other',
+            name: '其他工具',
+            tokens: 4500,
+            pct: 3.1,
+            count: 2,
+            items: [{ name: 'manage_task', tokens: 4500, pct: 3.1, count: 2 }],
+          },
         ],
       },
       subagents: [
@@ -1170,6 +1858,20 @@
     return `${sym}${v.toFixed(2)}`;
   }
 
+  function fmtCostHtml(usd, { compact = false } = {}) {
+    const raw = Number(usd);
+    if (!Number.isFinite(raw) || raw < 0) return '-';
+    const sym = currency === 'CNY' ? '¥' : '$';
+    const v = currency === 'CNY' ? raw * usdToCny : raw;
+    const pfx = `<span class="val-prefix">${sym}</span>`;
+    if (v === 0) return `${pfx}0`;
+    if (v < 0.001) return `<span class="val-prefix">&lt;${sym}</span>0.001`;
+    if (v < 0.01) return `${pfx}${v.toFixed(4)}`;
+    if (v < 1) return `${pfx}${v.toFixed(3)}`;
+    if (compact && v >= 1000) return `${pfx}${(v / 1000).toFixed(2)}<span class="val-unit">k</span>`;
+    return `${pfx}${v.toFixed(2)}`;
+  }
+
   function convertCost(usd) {
     const raw = Number(usd) || 0;
     return currency === 'CNY' ? raw * usdToCny : raw;
@@ -1186,14 +1888,37 @@
     return String(Math.round(v));
   }
 
+  function fmtTokHtml(n) {
+    const v = Number(n) || 0;
+    if (v >= 1e6) {
+      const num = (v / 1e6).toFixed(v % 1e6 === 0 ? 0 : 2);
+      return `${num}<span class="val-unit">M</span>`;
+    }
+    if (v >= 1e3) {
+      const num = (v / 1e3).toFixed(1);
+      return `${num}<span class="val-unit">k</span>`;
+    }
+    return String(Math.round(v));
+  }
+
   function fmtPct(v) {
     if (v == null || !Number.isFinite(v)) return '-';
     return `${v.toFixed(1)}%`;
   }
 
+  function fmtPctHtml(v) {
+    if (v == null || !Number.isFinite(v)) return '-';
+    return `${v.toFixed(1)}<span class="val-unit">%</span>`;
+  }
+
   function fmtSpeed(v) {
     if (v == null || !Number.isFinite(v)) return '-';
     return `${v.toFixed(0)} tok/s`;
+  }
+
+  function fmtSpeedHtml(v) {
+    if (v == null || !Number.isFinite(v)) return '-';
+    return `${v.toFixed(0)}<span class="val-unit val-unit-sp"> tok/s</span>`;
   }
 
   function fmtSec(v) {
@@ -1211,6 +1936,12 @@
     return 'var(--accent)';
   }
 
+  function toneClass(pct) {
+    if (pct >= 90) return 'tone-crit';
+    if (pct >= 75) return 'tone-warn';
+    return 'tone-accent';
+  }
+
   const chartInstances = [];
 
   function disposeCharts() {
@@ -1219,22 +1950,42 @@
     }
   }
 
-  function isDarkSurface() {
+  let colorProbeEl = null;
+  function parseCssColorLum(val) {
+    if (!val || val === 'transparent' || val === 'none') return null;
+    if (!colorProbeEl) {
+      colorProbeEl = document.createElement('span');
+      colorProbeEl.style.cssText = 'position:fixed;left:-9999px;visibility:hidden;pointer-events:none;';
+      document.body.appendChild(colorProbeEl);
+    }
+    colorProbeEl.style.color = '';
+    colorProbeEl.style.color = val;
+    if (!colorProbeEl.style.color) return null;
+    const rgb = getComputedStyle(colorProbeEl).color;
+    const m = rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+    if (!m) return null;
+    const alpha = m[4] === undefined ? 1 : Number(m[4]);
+    if (alpha <= 0.1) return null;
+    return (0.299 * Number(m[1]) + 0.587 * Number(m[2]) + 0.114 * Number(m[3])) / 255;
+  }
+
+  function syncSurfaceTheme() {
+    const themeParam = params.get('theme');
     let dark = null;
-    const els = [document.body, document.documentElement];
-    for (const el of els) {
-      if (!el) continue;
-      const bg = getComputedStyle(el).backgroundColor || '';
-      const m = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
-      if (m) {
-        const alpha = m[4] === undefined ? 1 : Number(m[4]);
-        if (alpha > 0.1) {
-          const lum = (0.299 * Number(m[1]) + 0.587 * Number(m[2]) + 0.114 * Number(m[3])) / 255;
-          dark = lum <= 0.5;
-          break;
-        }
+    if (themeParam === 'dark') dark = true;
+    else if (themeParam === 'light') dark = false;
+
+    if (dark === null) {
+      const rootCs = getComputedStyle(document.documentElement);
+      const hostBgLum = parseCssColorLum(rootCs.getPropertyValue('--background').trim());
+      if (hostBgLum !== null) {
+        dark = hostBgLum <= 0.5;
+      } else {
+        const hostFgLum = parseCssColorLum(rootCs.getPropertyValue('--foreground').trim());
+        if (hostFgLum !== null) dark = hostFgLum > 0.55;
       }
     }
+
     if (dark === null) {
       dark = Boolean(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
     }
@@ -1244,21 +1995,43 @@
   }
 
   function getThemeColors() {
+    const isDark = syncSurfaceTheme();
     const cs = getComputedStyle(document.documentElement);
-    const isDark = isDarkSurface();
-    const fg = cs.getPropertyValue('--fg').trim() || (isDark ? '#e6edf3' : '#1f2328');
-    const dim = cs.getPropertyValue('--dim').trim() || (isDark ? '#8b949e' : '#656d76');
-    const line = cs.getPropertyValue('--line').trim() || (isDark ? 'rgba(255,255,255,0.12)' : 'rgba(128,128,128,0.16)');
-    const bg = cs.getPropertyValue('--bg').trim() || (isDark ? '#18181b' : '#ffffff');
+    const v = (name) => cs.getPropertyValue(name).trim();
+    const treemap = {};
+    for (const k of TREEMAP_KEYS) {
+      treemap[k] = {
+        bg: v(`--tm-${k}-bg`),
+        border: v(`--tm-${k}-border`),
+        fg: v(`--tm-${k}-fg`),
+        accent: v(`--tm-${k}-accent`),
+      };
+    }
     return {
       isDark,
-      fg,
-      dim,
-      line,
-      bg,
-      tooltipBg: isDark ? 'rgba(24, 24, 27, 0.94)' : 'rgba(255, 255, 255, 0.96)',
-      tooltipBorder: isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(15, 23, 42, 0.1)',
+      fg: v('--fg'),
+      fgSecondary: v('--fg-secondary'),
+      dim: v('--dim'),
+      line: v('--line'),
+      surface: v('--surface'),
+      tooltipBg: v('--tooltip-bg'),
+      tooltipBorder: v('--tooltip-border'),
+      tooltipShadow: v('--tooltip-shadow'),
+      vizCache: v('--viz-cache'),
+      vizInput: v('--viz-input'),
+      vizOutput: v('--viz-output'),
+      vizGrid: v('--viz-grid'),
+      treemap,
     };
+  }
+
+  syncSurfaceTheme();
+  if (window.matchMedia) {
+    try {
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+        syncSurfaceTheme();
+      });
+    } catch {}
   }
 
   function reduceMotion() {
@@ -1272,7 +2045,7 @@
     const chart = window.echarts.init(el, null, { renderer: 'svg' });
     chart.setOption({
       animation: !reduceMotion() && pendingChartAnim,
-      animationDuration: 650,
+      animationDuration: 600,
       animationEasing: 'cubicOut',
       ...option,
     });
@@ -1280,9 +2053,53 @@
     return chart;
   }
 
+  function pruneSmallTreemapLabels(chart) {
+    if (!chart || chart.isDisposed?.()) return;
+    try {
+      const displayList = chart.getZr()?.storage?.getDisplayList() || [];
+      for (const el of displayList) {
+        if (el?.type !== 'rect' || !el.shape || typeof el.getTextContent !== 'function') continue;
+        const tc = el.getTextContent();
+        if (!tc) continue;
+        const w = Number(el.shape.width) || 0;
+        const h = Number(el.shape.height) || 0;
+        if (tc.__agyFullText === undefined) {
+          tc.__agyFullText = tc.style?.text || '';
+        }
+        const fullText = tc.__agyFullText;
+        if (tc.disableLabelLayout) {
+          if (w < 54 || h < 24) {
+            tc.attr('ignore', true);
+          } else if (w < 88) {
+            tc.attr('ignore', false);
+            const shortTitle = String(fullText).replace(/\s+\d+%$/, '');
+            if (tc.style?.text !== shortTitle) tc.setStyle('text', shortTitle);
+          } else {
+            tc.attr('ignore', false);
+            if (tc.style?.text !== fullText) tc.setStyle('text', fullText);
+          }
+          continue;
+        }
+        if (w < 52 || h < 24) {
+          tc.attr('ignore', true);
+        } else if (h < 38) {
+          tc.attr('ignore', false);
+          const firstLine = String(fullText).split('\n')[0];
+          if (tc.style?.text !== firstLine) tc.setStyle('text', firstLine);
+        } else {
+          tc.attr('ignore', false);
+          if (tc.style?.text !== fullText) tc.setStyle('text', fullText);
+        }
+      }
+    } catch {}
+  }
+
   window.addEventListener('resize', () => {
     for (const c of chartInstances) {
-      try { c.resize(); } catch {}
+      try {
+        c.resize();
+        if (c.__agyPruneLabels) c.__agyPruneLabels();
+      } catch {}
     }
   });
 
@@ -1295,22 +2112,26 @@
     const toolBodyAnim = pendingExpandAnim === 'tools' ? ' anim-reveal' : '';
     if (toolViewMode === 'list') {
       bodyHtml = `
-        <div class="sub-list${toolBodyAnim}" style="border:1px solid var(--line);border-radius:8px;overflow:hidden;">
-          ${groups.map((g) => `
-            <div class="model-row">
-              <div class="model-bar-wrap">
-                <div class="model-bar-top">
-                  <span class="model-bar-name"><span class="tm-pill-dot" style="display:inline-block;margin-right:5px;background:${esc(g.color)}"></span>${esc(g.name)}</span>
-                  <span class="num">${fmtTok(g.tokens)} <span class="dim">(${g.pct.toFixed(1)}% · ${g.count}次)</span></span>
+        <div class="tm-list${toolBodyAnim}">
+          ${groups.map((g) => {
+            const k = resolveTreemapKey(g);
+            const accentColor = `var(--tm-${k}-accent)`;
+            return `
+              <div class="model-row">
+                <div class="model-bar-wrap">
+                  <div class="model-bar-top">
+                    <span class="model-bar-name"><span class="tm-pill-dot" style="display:inline-block;margin-right:6px;background:${accentColor}"></span>${esc(g.name)}</span>
+                    <span class="num">${fmtTokHtml(g.tokens)} <span class="dim">(${g.pct.toFixed(1)}% · ${g.count}次)</span></span>
+                  </div>
+                  <div class="model-bar"><div style="width:${Math.min(100, g.pct).toFixed(1)}%;background:${accentColor}"></div></div>
                 </div>
-                <div class="model-bar"><div style="width:${Math.min(100, g.pct).toFixed(1)}%;background:${esc(g.color)}"></div></div>
               </div>
-            </div>
-          `).join('')}
+            `;
+          }).join('')}
         </div>
       `;
     } else {
-      bodyHtml = `<div id="chart-tool-treemap" class="${toolBodyAnim.trim()}" style="width:100%;height:184px;"></div>`;
+      bodyHtml = `<div id="chart-tool-treemap" class="${toolBodyAnim.trim()}" style="width:100%;height:186px;"></div>`;
     }
 
     return `
@@ -1337,28 +2158,37 @@
     if (groups.length === 0 || total <= 0) return;
     const theme = getThemeColors();
 
-    const treeData = groups.map((g) => ({
-      name: g.name,
-      value: g.tokens,
-      pct: g.pct,
-      count: g.count,
-      itemStyle: { color: g.color, borderColor: 'transparent', gapWidth: 2 },
-      children: (g.items || []).map((it) => ({
-        name: it.name,
-        value: it.tokens,
-        pct: it.pct,
-        count: it.count,
-        groupName: g.name,
-        itemStyle: { color: g.color },
-      })),
-    }));
+    const treeData = groups.map((g) => {
+      const k = resolveTreemapKey(g);
+      const pal = theme.treemap[k] || theme.treemap.other;
+      return {
+        name: g.name,
+        value: g.tokens,
+        pct: g.pct,
+        count: g.count,
+        itemStyle: { color: pal.bg, borderColor: pal.border, borderWidth: 1, gapWidth: 2 },
+        upperLabel: { color: pal.fg, textBorderWidth: 0, textBorderColor: 'transparent' },
+        children: (g.items || []).map((it) => ({
+          name: it.name,
+          value: it.tokens,
+          pct: it.pct,
+          count: it.count,
+          groupName: g.name,
+          itemStyle: { color: pal.bg, borderColor: pal.border },
+          label: { color: pal.fg, textBorderWidth: 0, textBorderColor: 'transparent' },
+        })),
+      };
+    });
 
-    initEChart('chart-tool-treemap', {
+    const chart = initEChart('chart-tool-treemap', {
       tooltip: {
         confine: true,
         backgroundColor: theme.tooltipBg,
         borderColor: theme.tooltipBorder,
         borderWidth: 1,
+        borderRadius: 8,
+        padding: [7, 9],
+        extraCssText: `box-shadow:${theme.tooltipShadow};font-variant-numeric:tabular-nums;`,
         textStyle: { color: theme.fg, fontSize: 11 },
         formatter: (info) => {
           const d = info.data || {};
@@ -1366,7 +2196,7 @@
           const title = d.groupName ? `${esc(d.groupName)} · ${esc(d.name)}` : esc(d.name);
           return `<div style="font-weight:600;margin-bottom:2px;">${title}</div>`
             + `<div>Tokens: <b>${fmtTok(d.value)}</b> (${pctStr})</div>`
-            + (d.count ? `<div>调用次数: ${d.count} 次</div>` : '');
+            + (d.count ? `<div style="color:${theme.dim};">调用次数: ${d.count} 次</div>` : '');
         },
       },
       series: [{
@@ -1377,27 +2207,60 @@
         bottom: 2,
         roam: false,
         nodeClick: false,
+        animationDurationUpdate: 280,
         breadcrumb: { show: false },
         itemStyle: {
           borderRadius: 5,
-          borderColor: theme.bg === 'transparent' ? 'rgba(128,128,128,0.2)' : theme.bg,
-          borderWidth: 1.5,
+          borderColor: theme.surface,
+          borderWidth: 1,
           gapWidth: 2,
+        },
+        emphasis: {
+          itemStyle: {
+            borderWidth: 1.5,
+          },
+          upperLabel: {
+            textBorderWidth: 0,
+            textBorderColor: 'transparent',
+          },
+          label: {
+            textBorderWidth: 0,
+            textBorderColor: 'transparent',
+          },
         },
         upperLabel: {
           show: true,
           height: 18,
-          color: '#111827',
+          padding: [0, 5],
+          color: theme.fg,
+          textBorderWidth: 0,
+          textBorderColor: 'transparent',
           fontSize: 10,
           fontWeight: 600,
+          overflow: 'truncate',
+          ellipsis: '…',
           formatter: (p) => `${p.name} ${Number(p.data?.pct || 0).toFixed(0)}%`,
         },
         label: {
           show: true,
-          color: '#111827',
+          position: 'insideTopLeft',
+          padding: [4, 6],
+          color: theme.fg,
+          textBorderWidth: 0,
+          textBorderColor: 'transparent',
           fontSize: 10.5,
-          fontWeight: 600,
+          fontWeight: 500,
+          lineHeight: 14,
+          overflow: 'truncate',
+          ellipsis: '…',
           formatter: (p) => `${p.name}\n${fmtTok(p.value)}`,
+        },
+        labelLayout: (params) => {
+          const rect = params?.rect || {};
+          if ((rect.width || 0) < 52 || (rect.height || 0) < 24) {
+            return { fontSize: 0 };
+          }
+          return { hideOverlap: true };
         },
         levels: [
           {
@@ -1405,13 +2268,33 @@
             upperLabel: { show: false },
           },
           {
-            itemStyle: { borderRadius: 6, gapWidth: 2, borderWidth: 1.5 },
+            itemStyle: { borderRadius: 6, gapWidth: 2, borderWidth: 1 },
             upperLabel: { show: true },
+          },
+          {
+            itemStyle: { borderRadius: 4, borderWidth: 0 },
           },
         ],
         data: treeData,
       }],
     });
+
+    if (chart) {
+      let pruneRaf = 0;
+      const schedulePrune = () => {
+        if (pruneRaf) cancelAnimationFrame(pruneRaf);
+        pruneRaf = requestAnimationFrame(() => {
+          pruneRaf = 0;
+          pruneSmallTreemapLabels(chart);
+        });
+      };
+      chart.__agyPruneLabels = schedulePrune;
+      schedulePrune();
+      chart.on('finished', schedulePrune);
+      chart.on('mouseover', schedulePrune);
+      chart.on('mouseout', schedulePrune);
+      chart.on('globalout', schedulePrune);
+    }
   }
 
   function renderTimelineBarChart(timeline) {
@@ -1452,23 +2335,27 @@
         backgroundColor: theme.tooltipBg,
         borderColor: theme.tooltipBorder,
         borderWidth: 1,
+        borderRadius: 8,
+        padding: [7, 9],
+        extraCssText: `box-shadow:${theme.tooltipShadow};font-variant-numeric:tabular-nums;`,
         textStyle: { color: theme.fg, fontSize: 11 },
         formatter: (params) => {
           const idx = params?.[0]?.dataIndex ?? 0;
           const b = timeline[idx];
           if (!b) return '';
+          const dot = (c) => `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${c};margin-right:4px;vertical-align:1px;"></span>`;
           if (isCost) {
             return `<div style="font-weight:600;margin-bottom:3px;">${esc(b.label)} · ${b.turns} 轮</div>`
-              + `<div>估算费用: <b>${fmtCost(b.cost)}</b> <span style="opacity:0.75;">(${fmtTok(b.total)})</span></div>`
-              + `<div><span style="color:#60a5fa">●</span> 缓存读取: ${fmtCost(b.cacheReadCost)}</div>`
-              + `<div><span style="color:#3b82f6">●</span> 新输入: ${fmtCost(b.inputCost)}</div>`
-              + `<div><span style="color:#f59e0b">●</span> 输出: ${fmtCost(b.outputCost)}</div>`;
+              + `<div style="margin-bottom:2px;">估算费用: <b>${fmtCost(b.cost)}</b> <span style="color:${theme.dim};">(${fmtTok(b.total)})</span></div>`
+              + `<div>${dot(theme.vizCache)}缓存读取: ${fmtCost(b.cacheReadCost)}</div>`
+              + `<div>${dot(theme.vizInput)}新输入: ${fmtCost(b.inputCost)}</div>`
+              + `<div>${dot(theme.vizOutput)}输出: ${fmtCost(b.outputCost)}</div>`;
           }
           return `<div style="font-weight:600;margin-bottom:3px;">${esc(b.label)} · ${b.turns} 轮</div>`
-            + `<div>总计: <b>${fmtTok(b.total)}</b>${b.cost > 0 ? ` <span style="opacity:0.75;">(≈ ${fmtCost(b.cost)})</span>` : ''}</div>`
-            + `<div><span style="color:#60a5fa">●</span> 缓存读取: ${fmtTok(b.cacheRead)}</div>`
-            + `<div><span style="color:#3b82f6">●</span> 新输入: ${fmtTok(b.uncachedInput)}</div>`
-            + `<div><span style="color:#f59e0b">●</span> 输出: ${fmtTok(b.output)}</div>`;
+            + `<div style="margin-bottom:2px;">总计: <b>${fmtTok(b.total)}</b>${b.cost > 0 ? ` <span style="color:${theme.dim};">(≈ ${fmtCost(b.cost)})</span>` : ''}</div>`
+            + `<div>${dot(theme.vizCache)}缓存读取: ${fmtTok(b.cacheRead)}</div>`
+            + `<div>${dot(theme.vizInput)}新输入: ${fmtTok(b.uncachedInput)}</div>`
+            + `<div>${dot(theme.vizOutput)}输出: ${fmtTok(b.output)}</div>`;
         },
       },
       legend: {
@@ -1496,7 +2383,7 @@
           fontSize: 10,
           formatter: (v) => (isCost ? fmtAxisCost(v) : fmtTok(v)),
         },
-        splitLine: { lineStyle: { color: theme.line, type: 'dashed' } },
+        splitLine: { lineStyle: { color: theme.vizGrid, type: 'dashed' } },
       },
       series: [
         {
@@ -1504,7 +2391,7 @@
           type: 'bar',
           stack: 'tok',
           barMaxWidth: 22,
-          itemStyle: { color: '#60a5fa' },
+          itemStyle: { color: theme.vizCache },
           data: timeline.map((b) => (isCost ? convertCost(b.cacheReadCost) : (b.cacheRead || 0))),
         },
         {
@@ -1512,7 +2399,7 @@
           type: 'bar',
           stack: 'tok',
           barMaxWidth: 22,
-          itemStyle: { color: '#3b82f6' },
+          itemStyle: { color: theme.vizInput },
           data: timeline.map((b) => (isCost ? convertCost(b.inputCost) : (b.uncachedInput || 0))),
         },
         {
@@ -1520,7 +2407,7 @@
           type: 'bar',
           stack: 'tok',
           barMaxWidth: 22,
-          itemStyle: { color: '#f59e0b', borderRadius: [3, 3, 0, 0] },
+          itemStyle: { color: theme.vizOutput, borderRadius: [3, 3, 0, 0] },
           data: timeline.map((b) => (isCost ? convertCost(b.outputCost) : (b.output || 0))),
         },
       ],
@@ -1572,27 +2459,34 @@
 
   function renderTopBar(extraRightHtml = '') {
     const isSettings = viewMode === 'settings';
+    const scopeHtml = viewMode === 'summary' ? `
+      <div class="ghost-seg" role="group" aria-label="统计范围">
+        <button type="button" class="ghost-btn ${summaryScope === 'workspace' ? 'active' : ''}" data-scope="workspace" aria-pressed="${summaryScope === 'workspace'}">工作区</button>
+        <button type="button" class="ghost-btn ${summaryScope === 'all' ? 'active' : ''}" data-scope="all" aria-pressed="${summaryScope === 'all'}">全部</button>
+      </div>
+      <span class="tool-div" aria-hidden="true"></span>
+    ` : '';
     return `
       <div class="header">
         <div class="seg-bar" role="tablist" aria-label="视图切换">
           <button type="button" class="seg-btn ${viewMode === 'session' ? 'active' : ''}" data-view="session" role="tab" aria-selected="${viewMode === 'session'}" tabindex="${viewMode === 'session' ? '0' : '-1'}">当前会话</button>
           <button type="button" class="seg-btn ${viewMode === 'summary' ? 'active' : ''}" data-view="summary" role="tab" aria-selected="${viewMode === 'summary'}" tabindex="${viewMode === 'summary' ? '0' : '-1'}">全局统计</button>
         </div>
-        <div style="display:flex;align-items:center;gap:6px;">
+        <div class="header-actions">
           ${extraRightHtml}
-          <button id="btn-pricing-settings" class="icon-btn ${isSettings ? 'active' : ''}" type="button" title="模型单价与汇率设置" aria-pressed="${isSettings}">
+          ${scopeHtml}
+          <button id="btn-pricing-settings" class="icon-btn icon-only ${isSettings ? 'active' : ''}" type="button" title="模型单价与汇率设置" aria-label="模型单价与汇率设置" aria-pressed="${isSettings}">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <circle cx="8" cy="8" r="2.2"/>
               <path d="M13.2 9.6a1.1 1.1 0 0 0 .22 1.2l.04.04a1.33 1.33 0 1 1-1.88 1.88l-.04-.04a1.1 1.1 0 0 0-1.2-.22 1.1 1.1 0 0 0-.67 1v.12a1.33 1.33 0 1 1-2.66 0v-.06a1.1 1.1 0 0 0-.72-1 1.1 1.1 0 0 0-1.2.22l-.04.04a1.33 1.33 0 1 1-1.88-1.88l.04-.04a1.1 1.1 0 0 0 .22-1.2 1.1 1.1 0 0 0-1-.67h-.12a1.33 1.33 0 1 1 0-2.66h.06a1.1 1.1 0 0 0 1-.72 1.1 1.1 0 0 0-.22-1.2l-.04-.04a1.33 1.33 0 1 1 1.88-1.88l.04.04a1.1 1.1 0 0 0 1.2.22h.05a1.1 1.1 0 0 0 .67-1v-.12a1.33 1.33 0 1 1 2.66 0v.06a1.1 1.1 0 0 0 .67 1 1.1 1.1 0 0 0 1.2-.22l.04-.04a1.33 1.33 0 1 1 1.88 1.88l-.04.04a1.1 1.1 0 0 0-.22 1.2v.05a1.1 1.1 0 0 0 1 .67h.12a1.33 1.33 0 1 1 0 2.66h-.06a1.1 1.1 0 0 0-1 .67Z"/>
             </svg>
           </button>
           ${isSettings ? '' : `
-            <button id="btn-refresh" class="icon-btn" type="button" title="${viewMode === 'summary' ? '手动刷新全局统计（自动刷新间隔 60s，快捷键 R）' : '立即刷新当前会话（快捷键 R）'}">
+            <button id="btn-refresh" class="icon-btn icon-only" type="button" title="${viewMode === 'summary' ? '手动刷新全局统计（每 60s 自动更新，快捷键 R）' : '立即刷新当前会话（快捷键 R）'}" aria-label="${viewMode === 'summary' ? '手动刷新全局统计' : '刷新当前会话'}">
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M13.5 8a5.5 5.5 0 1 1-1.4-3.65"/>
                 <path d="M13.5 2.5v2.75h-2.75"/>
               </svg>
-              <span>${viewMode === 'summary' ? '手动刷新' : '刷新'}</span>
             </button>
           `}
         </div>
@@ -1604,29 +2498,24 @@
   function renderSummaryFiltersHtml() {
     const ranges = [
       { id: 'today', label: '今天' },
-      { id: '7d', label: '近 7 天' },
-      { id: '30d', label: '近 30 天' },
+      { id: '7d', label: '7天' },
+      { id: '30d', label: '30天' },
       { id: 'all', label: '全部' },
     ];
     return `
-      <div class="filter-bar">
-        <div class="filter-row">
-          <div class="seg-bar seg-sm" role="group" aria-label="统计范围">
-            <button type="button" class="seg-btn ${summaryScope === 'workspace' ? 'active' : ''}" data-scope="workspace" aria-pressed="${summaryScope === 'workspace'}">当前工作区</button>
-            <button type="button" class="seg-btn ${summaryScope === 'all' ? 'active' : ''}" data-scope="all" aria-pressed="${summaryScope === 'all'}">全部</button>
-          </div>
-          <div class="seg-bar seg-sm" role="group" aria-label="时间范围">
-            ${ranges.map((r) => `<button type="button" class="seg-btn ${summaryRange === r.id ? 'active' : ''}" data-range="${r.id}" aria-pressed="${summaryRange === r.id}">${r.label}</button>`).join('')}
-          </div>
+      <div class="filter-toolbar">
+        <div class="seg-bar seg-sm" role="group" aria-label="时间范围">
+          ${ranges.map((r) => `<button type="button" class="seg-btn ${summaryRange === r.id ? 'active' : ''}" data-range="${r.id}" aria-pressed="${summaryRange === r.id}">${r.label}</button>`).join('')}
         </div>
-        <div class="filter-row">
-          <div class="seg-bar seg-sm" role="group" aria-label="统计维度">
-            <button type="button" class="seg-btn ${summaryMetric === 'tokens' ? 'active' : ''}" data-metric="tokens" aria-pressed="${summaryMetric === 'tokens'}">Token 用量</button>
-            <button type="button" class="seg-btn ${summaryMetric === 'cost' ? 'active' : ''}" data-metric="cost" aria-pressed="${summaryMetric === 'cost'}">费用估算</button>
+        <div class="filter-secondary">
+          <div class="ghost-seg" role="group" aria-label="统计维度">
+            <button type="button" class="ghost-btn ${summaryMetric === 'tokens' ? 'active' : ''}" data-metric="tokens" aria-pressed="${summaryMetric === 'tokens'}">用量</button>
+            <button type="button" class="ghost-btn ${summaryMetric === 'cost' ? 'active' : ''}" data-metric="cost" aria-pressed="${summaryMetric === 'cost'}">费用</button>
           </div>
-          <div class="seg-bar seg-sm" role="group" aria-label="货币单位" title="切换费用估算展示货币（当前汇率 1 USD = ${usdToCny} CNY）">
-            <button type="button" class="seg-btn ${currency === 'USD' ? 'active' : ''}" data-currency="USD" aria-pressed="${currency === 'USD'}">$ USD</button>
-            <button type="button" class="seg-btn ${currency === 'CNY' ? 'active' : ''}" data-currency="CNY" aria-pressed="${currency === 'CNY'}">¥ CNY</button>
+          <span class="tool-div" aria-hidden="true"></span>
+          <div class="ghost-seg ghost-currency${summaryMetric === 'tokens' ? ' is-muted' : ''}" role="group" aria-label="货币单位" title="切换费用估算展示货币（当前汇率 1 USD = ${usdToCny} CNY）">
+            <button type="button" class="ghost-btn ${currency === 'USD' ? 'active' : ''}" data-currency="USD" aria-pressed="${currency === 'USD'}" aria-label="美元 USD">$</button>
+            <button type="button" class="ghost-btn ${currency === 'CNY' ? 'active' : ''}" data-currency="CNY" aria-pressed="${currency === 'CNY'}" aria-label="人民币 CNY">¥</button>
           </div>
         </div>
       </div>
@@ -1634,19 +2523,6 @@
   }
 
   function bindSummaryFilters(root = appEl) {
-    root.querySelectorAll('.seg-btn[data-scope]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const next = btn.getAttribute('data-scope');
-        if (!next || next === summaryScope) return;
-        summaryScope = next;
-        lastSummary = null;
-        lastSummaryPayload = '';
-        saveUiState();
-        beginViewTransition({ mode: 'summary', direction: 'fade' });
-        resetPollTimer();
-        refresh(true);
-      });
-    });
     root.querySelectorAll('.seg-btn[data-range]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const next = btn.getAttribute('data-range');
@@ -1660,7 +2536,7 @@
         refresh(true);
       });
     });
-    root.querySelectorAll('.seg-btn[data-metric]').forEach((btn) => {
+    root.querySelectorAll('.ghost-btn[data-metric]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const next = btn.getAttribute('data-metric');
         if (!next || next === summaryMetric) return;
@@ -1670,15 +2546,16 @@
           pendingChartAnim = true;
           renderSummary(lastSummary);
         } else {
-          root.querySelectorAll('.seg-btn[data-metric]').forEach((b) => {
+          root.querySelectorAll('.ghost-btn[data-metric]').forEach((b) => {
             const active = b.getAttribute('data-metric') === summaryMetric;
             b.classList.toggle('active', active);
             b.setAttribute('aria-pressed', String(active));
           });
+          root.querySelector('.ghost-currency')?.classList.toggle('is-muted', summaryMetric === 'tokens');
         }
       });
     });
-    root.querySelectorAll('.seg-btn[data-currency]').forEach((btn) => {
+    root.querySelectorAll('.ghost-btn[data-currency]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const next = btn.getAttribute('data-currency');
         if (!next || next === currency) return;
@@ -1687,7 +2564,7 @@
         if (lastSummary && !lastSummary.error && !activeTransition) {
           renderSummary(lastSummary);
         } else {
-          root.querySelectorAll('.seg-btn[data-currency]').forEach((b) => {
+          root.querySelectorAll('.ghost-btn[data-currency]').forEach((b) => {
             const active = b.getAttribute('data-currency') === currency;
             b.classList.toggle('active', active);
             b.setAttribute('aria-pressed', String(active));
@@ -1992,6 +2869,19 @@
         refresh(true);
       });
     });
+    topBar.querySelectorAll('.ghost-btn[data-scope]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const next = btn.getAttribute('data-scope');
+        if (!next || next === summaryScope) return;
+        summaryScope = next;
+        lastSummary = null;
+        lastSummaryPayload = '';
+        saveUiState();
+        beginViewTransition({ mode: 'summary', direction: 'fade' });
+        resetPollTimer();
+        refresh(true);
+      });
+    });
     topBar.querySelector('#btn-pricing-settings')?.addEventListener('click', () => {
       if (viewMode === 'settings') {
         switchView(previousViewMode || 'summary');
@@ -2065,7 +2955,10 @@
     const contentLayer = commitViewContent(`
       <div class="back-bar">
         <span style="font-weight:600;color:var(--fg);">单价与汇率设置</span>
-        <button id="btn-settings-back" class="back-btn" type="button">← 返回${previousViewMode === 'session' ? '当前会话' : '全局统计'}</button>
+        <button id="btn-settings-back" class="back-btn" type="button">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 4L6 8l4 4"/></svg>
+          <span>返回${previousViewMode === 'session' ? '当前会话' : '全局统计'}</span>
+        </button>
       </div>
 
       <div class="settings-card">
@@ -2085,7 +2978,10 @@
       <div class="settings-card">
         <div class="chart-head">
           <span class="chart-title">模型参考单价（USD / 1M tokens）</span>
-          <button id="btn-add-price-rule" class="icon-btn" type="button" style="height:23px;padding:0 8px;font-size:11px;">+ 新增规则</button>
+          <button id="btn-add-price-rule" class="icon-btn" type="button" style="height:23px;padding:0 8px;font-size:11px;">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9"/></svg>
+            <span>新增规则</span>
+          </button>
         </div>
         <p class="settings-note">按从上到下顺序匹配模型名关键词（多个关键词用英文逗号分隔）。自定义规则会自动置顶，可覆盖下方默认档位。</p>
         <div class="price-rule-list">
@@ -2094,7 +2990,9 @@
               <div class="price-rule-head">
                 <input class="field-input" data-field="label" type="text" placeholder="显示名称" value="${esc(r.label)}" aria-label="模型显示名称">
                 <input class="field-input" data-field="keywords" type="text" placeholder="匹配关键词，如 argon, orchestrator" value="${esc((r.keywords || []).join(', '))}" aria-label="匹配关键词">
-                <button class="price-rule-del" type="button" data-del-idx="${idx}" title="删除此规则" aria-label="删除规则">×</button>
+                <button class="price-rule-del" type="button" data-del-idx="${idx}" title="删除此规则" aria-label="删除规则">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>
+                </button>
               </div>
               <div class="price-grid">
                 <div class="price-field">
@@ -2289,51 +3187,51 @@
       <div class="bento">
         <div class="kpi">
           <div class="kpi-head"><span>估算总费用</span><span class="kpi-tag">API 参考价</span></div>
-          <div class="kpi-val num" style="color:var(--warn-fg)">${fmtCost(totalCostVal)}</div>
+          <div class="kpi-val num" style="color:var(--warn-fg)">${fmtCostHtml(totalCostVal)}</div>
           <div class="kpi-sub num">${summary.conversations || 0} 会话 · ${summary.turns || 0} 轮 · 均 ${fmtCost(cost.avgPerTurn)}/轮</div>
         </div>
 
         <div class="kpi">
-          <div class="kpi-head"><span>缓存节省金额</span><span class="kpi-tag">命中 ${fmtPct(cache.hitRate)}</span></div>
-          <div class="kpi-val num" style="color:var(--ok)">省 ${fmtCost(cost.savedByCache)}</div>
+          <div class="kpi-head"><span>缓存节省金额</span><span class="kpi-tag num">命中 ${fmtPct(cache.hitRate)}</span></div>
+          <div class="kpi-val num" style="color:var(--ok-fg)"><span class="val-prefix">省 </span>${fmtCostHtml(cost.savedByCache)}</div>
           <div class="kpi-sub num">缓存读 ${fmtCost(cost.cacheRead)} · 共 ${fmtTok(totals.all)}</div>
         </div>
 
         <div class="kpi">
-          <div class="kpi-head"><span>输入费用</span><span class="kpi-tag">占 ${fmtPct(inputCostPct)}</span></div>
-          <div class="kpi-val num">${fmtCost(inputCostTotal)}</div>
+          <div class="kpi-head"><span>输入费用</span><span class="kpi-tag num">占 ${fmtPct(inputCostPct)}</span></div>
+          <div class="kpi-val num">${fmtCostHtml(inputCostTotal)}</div>
           <div class="kpi-sub num">新 ${fmtCost(cost.input)} · 缓存 ${fmtCost(cost.cacheRead)}</div>
         </div>
 
         <div class="kpi">
-          <div class="kpi-head"><span>输出费用</span><span class="kpi-tag">占 ${fmtPct(outputCostPct)}</span></div>
-          <div class="kpi-val num">${fmtCost(cost.output)}</div>
+          <div class="kpi-head"><span>输出费用</span><span class="kpi-tag num">占 ${fmtPct(outputCostPct)}</span></div>
+          <div class="kpi-val num">${fmtCostHtml(cost.output)}</div>
           <div class="kpi-sub num">输出 ${fmtTok(totals.output)} · 均 ${fmtCost(cost.avgPerConv)}/会话</div>
         </div>
       </div>
     ` : `
       <div class="bento">
         <div class="kpi">
-          <div class="kpi-head"><span>Token 总消耗</span><span class="kpi-tag">${totalCostVal > 0 ? `≈ ${fmtCost(totalCostVal)}` : '合计'}</span></div>
-          <div class="kpi-val num">${fmtTok(totals.all)}</div>
+          <div class="kpi-head"><span>Token 总消耗</span><span class="kpi-tag num">${totalCostVal > 0 ? `≈ ${fmtCost(totalCostVal)}` : '合计'}</span></div>
+          <div class="kpi-val num">${fmtTokHtml(totals.all)}</div>
           <div class="kpi-sub num">${summary.conversations || 0} 个活跃会话 · ${summary.turns || 0} 轮</div>
         </div>
 
         <div class="kpi">
           <div class="kpi-head"><span>缓存命中 &amp; 均速</span><span class="kpi-tag">性能</span></div>
-          <div class="kpi-val num" style="color:var(--ok)">${fmtPct(cache.hitRate)}</div>
+          <div class="kpi-val num" style="color:var(--ok-fg)">${fmtPctHtml(cache.hitRate)}</div>
           <div class="kpi-sub num">均速 ${fmtSpeed(speed.avgTokensPerSec)} · 首字 ${fmtSec(speed.avgTtftSec)}</div>
         </div>
 
         <div class="kpi">
-          <div class="kpi-head"><span>累计输入</span><span class="kpi-tag">省 ${fmtTok(cache.savedInputTokens)}</span></div>
-          <div class="kpi-val num">${fmtTok(totals.inputAll)}</div>
+          <div class="kpi-head"><span>累计输入</span><span class="kpi-tag num">省 ${fmtTok(cache.savedInputTokens)}</span></div>
+          <div class="kpi-val num">${fmtTokHtml(totals.inputAll)}</div>
           <div class="kpi-sub num">新 ${fmtTok(totals.uncachedInput)} · 缓存 ${fmtTok(totals.cacheRead)}</div>
         </div>
 
         <div class="kpi">
-          <div class="kpi-head"><span>累计输出</span><span class="kpi-tag">${summary.turns || 0} 轮</span></div>
-          <div class="kpi-val num">${fmtTok(totals.output)}</div>
+          <div class="kpi-head"><span>累计输出</span><span class="kpi-tag num">${summary.turns || 0} 轮</span></div>
+          <div class="kpi-val num">${fmtTokHtml(totals.output)}</div>
           <div class="kpi-sub num">思考 ${fmtTok(totals.thinking)} · 回复 ${fmtTok(totals.response)}</div>
         </div>
       </div>
@@ -2370,7 +3268,7 @@
                     <div class="model-bar-wrap">
                       <div class="model-bar-top">
                         <span class="model-bar-name">${esc(m.modelName)}</span>
-                        <span class="num">${m.pricing ? fmtCost(m.cost) : '<span class="dim">未知单价</span>'} <span class="dim">(${fmtPct(m.costPct)})</span></span>
+                        <span class="num">${m.pricing ? fmtCostHtml(m.cost) : '<span class="dim">未知单价</span>'} <span class="dim">(${fmtPct(m.costPct)})</span></span>
                       </div>
                       <div class="model-bar cost-bar"><div style="width:${barPct.toFixed(1)}%"></div></div>
                       <div class="model-bar-sub num">
@@ -2386,7 +3284,7 @@
                   <div class="model-bar-wrap">
                     <div class="model-bar-top">
                       <span class="model-bar-name">${esc(m.modelName)}</span>
-                      <span class="num">${fmtTok(m.tokens)} <span class="dim">(${fmtPct(m.pct)} · ${m.turns}轮${m.cost > 0 ? ` · ${fmtCost(m.cost)}` : ''})</span></span>
+                      <span class="num">${fmtTokHtml(m.tokens)} <span class="dim">(${fmtPct(m.pct)} · ${m.turns}轮${m.cost > 0 ? ` · ${fmtCost(m.cost)}` : ''})</span></span>
                     </div>
                     <div class="model-bar"><div style="width:${barPct.toFixed(1)}%"></div></div>
                   </div>
@@ -2405,8 +3303,9 @@
         <div class="sub-list">
           ${topConvs.length === 0
             ? '<p class="dim" style="font-size:11.5px;padding:12px;text-align:center;margin:0;">该时段暂无调用记录</p>'
-            : topConvs.map((c) => `
+            : topConvs.map((c, idx) => `
               <div class="sub-row" role="button" tabindex="0" data-conv-id="${esc(c.id)}" title="点击切换到该会话详情">
+                <span class="rank-idx num">${idx + 1}</span>
                 <div class="sub-left">
                   <div class="sub-title">
                     <span class="sub-role">${esc(c.title)}</span>
@@ -2418,9 +3317,10 @@
                 </div>
                 <div class="sub-right num">
                   ${isCost
-                    ? `<div class="sub-ctx" style="color:var(--warn-fg)">${fmtCost(c.cost)}</div><div class="sub-ctx-sub">${fmtTok(c.totalTokens)}</div>`
-                    : `<div class="sub-ctx">${fmtTok(c.totalTokens)}</div>${c.cost > 0 ? `<div class="sub-ctx-sub">${fmtCost(c.cost)}</div>` : ''}`}
+                    ? `<div class="sub-ctx" style="color:var(--warn-fg)">${fmtCostHtml(c.cost)}</div><div class="sub-ctx-sub">${fmtTok(c.totalTokens)}</div>`
+                    : `<div class="sub-ctx">${fmtTokHtml(c.totalTokens)}</div>${c.cost > 0 ? `<div class="sub-ctx-sub">${fmtCost(c.cost)}</div>` : ''}`}
                 </div>
+                <svg class="row-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg>
               </div>
             `).join('')}
         </div>
@@ -2488,22 +3388,24 @@
     const allTurns = Array.isArray(data.allTurns) ? data.allTurns : (Array.isArray(data.recentTurns) ? data.recentTurns : []);
 
     const ctxPct = Math.max(0, Math.min(100, Number(ctx.pct) || 0));
-    const tone = toneColor(ctxPct);
+    const ctxToneClass = toneClass(ctxPct);
 
-    // 100-dot grid
+    // 100-dot grid (CSS variables only)
     const cats = Array.isArray(bd.categories) ? bd.categories : [];
-    const colorToCat = new Map(cats.map((c) => [c.color, c.name]));
+    const colorToCatObj = new Map(cats.map((c) => [c.color, c]));
     const sessionAnimKey = `${data.cascadeId || 'mock'}:${mockMode ? mockScenario : 'live'}`;
     const shouldAnimateDots = lastAnimatedSessionId !== sessionAnimKey;
     lastAnimatedSessionId = sessionAnimKey;
 
     const dots = Array.isArray(bd.dots) ? bd.dots : new Array(100).fill(null);
     const dotsHtml = dots.map((c, idx) => {
-      const catAttr = c ? (colorToCat.get(c) || '') : '__free__';
+      const catObj = c ? colorToCatObj.get(c) : null;
+      const catAttr = catObj ? catObj.name : (c ? '__other__' : '__free__');
+      const dotColor = catObj ? resolveCtxVar(catObj) : (c ? 'var(--ctx-other)' : '');
       const delay = (idx % 20) * 16 + Math.floor(idx / 20) * 32;
       const delayStyle = shouldAnimateDots ? `--dot-delay:${delay}ms;` : '';
       return c
-        ? `<span class="ctx-dot" data-cat="${esc(catAttr)}" style="background:${esc(c)};${delayStyle}"></span>`
+        ? `<span class="ctx-dot" data-cat="${esc(catAttr)}" style="background:${dotColor};${delayStyle}"></span>`
         : `<span class="ctx-dot" data-cat="__free__" style="${delayStyle}"></span>`;
     }).join('');
 
@@ -2511,15 +3413,16 @@
     const catsAnim = pendingExpandAnim === 'cats';
     const catsHtml = visibleCats.map((c, idx) => `
       <div class="cat-row${catsAnim && idx >= 4 ? ' anim-reveal' : ''}" data-cat="${esc(c.name)}">
-        <span class="cat-mark" style="background:${esc(c.color)}"></span>
+        <span class="cat-mark" style="background:${resolveCtxVar(c)}"></span>
         <span>${esc(c.name)}</span>
-        <span class="cat-tok num">${fmtTok(c.tokens)}</span>
+        <span class="cat-tok num">${fmtTokHtml(c.tokens)}</span>
         <span class="cat-pct num">${fmtPct(c.pct)}</span>
       </div>
     `).join('');
     const catsMoreHtml = cats.length > 4 ? `
       <button id="btn-toggle-cats" class="cat-more-btn" type="button" aria-expanded="${catsExpanded}">
-        ${catsExpanded ? '收起 ▴' : `展开其余 ${cats.length - 4} 项 ▾`}
+        <span>${catsExpanded ? '收起' : `展开其余 ${cats.length - 4} 项`}</span>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
       </button>
     ` : '';
 
@@ -2527,7 +3430,7 @@
       <div class="cat-row" data-cat="__free__">
         <span class="cat-mark free"></span>
         <span class="dim">剩余可用</span>
-        <span class="cat-tok num dim">${fmtTok(bd.free?.tokens ?? ctx.free)}</span>
+        <span class="cat-tok num dim">${fmtTokHtml(bd.free?.tokens ?? ctx.free)}</span>
         <span class="cat-pct num">${fmtPct(bd.free?.pct ?? (100 - ctxPct))}</span>
       </div>
     ` : '';
@@ -2562,7 +3465,7 @@
                       </div>
                     </div>
                     <div class="turn-right num">
-                      <div class="turn-spd">${fmtSpeed(t.tokensPerSec)}</div>
+                      <div class="turn-spd">${fmtSpeedHtml(t.tokensPerSec)}</div>
                       <div class="turn-dur">首字 ${fmtSec(t.ttftSec)}</div>
                     </div>
                   </div>
@@ -2592,7 +3495,7 @@
 
     const swarmSubTotalTok = swarmWorkers.reduce((sum, s) => sum + (Number(s?.totals?.all) || 0), 0);
     const swarmRunningCount = swarmWorkers.filter((s) => !s.killed && String(s.status || '').includes('RUNNING')).length;
-    const swarmColors = ['#3b82f6', '#10b981', '#f59e0b', '#a855f7', '#ec4899', '#06b6d4', '#84cc16'];
+    const swarmVars = ['var(--swarm-1)', 'var(--swarm-2)', 'var(--swarm-3)', 'var(--swarm-4)', 'var(--swarm-5)', 'var(--swarm-6)'];
     const teamTotalTok = (Number(totals.all) || 0) + swarmSubTotalTok;
 
     function renderAgentRows(list, useShortName) {
@@ -2604,6 +3507,7 @@
         const sCtx = s.context || {};
         const sPct = Math.max(0, Math.min(100, Number(sCtx.pct) || 0));
         const sTone = toneColor(sPct);
+        const sToneCls = toneClass(sPct);
         const sSpeed = fmtSpeed(s.speed?.latestTokensPerSec);
         const sHit = s.cache?.overallHitRate != null ? `${s.cache.overallHitRate.toFixed(0)}%` : '-';
         const displayName = (useShortName && s.scriptName) ? s.scriptName : s.role;
@@ -2620,9 +3524,10 @@
               </div>
             </div>
             <div class="sub-right num">
-              <div class="sub-ctx" style="color:${sTone}">${sCtx.max > 0 ? fmtPct(sPct) : fmtTok(sCtx.used || 0)}</div>
+              <div class="sub-ctx ${sToneCls}">${sCtx.max > 0 ? fmtPctHtml(sPct) : fmtTokHtml(sCtx.used || 0)}</div>
               <div class="sub-bar"><div style="width:${sPct.toFixed(1)}%;background:${sTone}"></div></div>
             </div>
+            <svg class="row-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg>
           </div>
         `;
       }).join('');
@@ -2630,11 +3535,11 @@
 
     const swarmDistHtml = (swarmWorkers.length > 0 && swarmExpanded && teamTotalTok > 0) ? (() => {
       const members = [
-        { label: '主代理', tokens: Number(totals.all) || 0, color: '#64748b' },
+        { label: '主代理', tokens: Number(totals.all) || 0, color: 'var(--swarm-0)' },
         ...swarmWorkers.map((s, idx) => ({
           label: s.scriptName || s.role,
           tokens: Number(s?.totals?.all) || 0,
-          color: swarmColors[idx % swarmColors.length],
+          color: swarmVars[idx % swarmVars.length],
         })),
       ].filter((m) => m.tokens > 0);
       return `
@@ -2702,7 +3607,8 @@
       <div class="back-bar">
         <span class="dim">${data.parentConversationId ? '当前正在查看子代理' : '当前正在查看其他会话'}</span>
         <button id="btn-back-parent" class="back-btn" data-target="${esc(backTarget)}">
-          ← ${data.parentConversationId ? '返回主代理' : '回到当前会话'}
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 4L6 8l4 4"/></svg>
+          <span>${data.parentConversationId ? '返回主代理' : '回到当前会话'}</span>
         </button>
       </div>
     ` : '';
@@ -2738,12 +3644,12 @@
       <div class="hero">
         <div class="hero-top">
           <span class="hero-label">上下文窗口分布（每点 = 1%）</span>
-          <span class="pct-pill num" style="color:${tone};background:color-mix(in srgb, ${tone} 12%, transparent);border-color:color-mix(in srgb, ${tone} 26%, transparent)">
-            ${ctx.max > 0 ? fmtPct(ctxPct) : '-'}
+          <span class="pct-pill ${ctxToneClass} num">
+            ${ctx.max > 0 ? fmtPctHtml(ctxPct) : '-'}
           </span>
         </div>
         <div class="hero-nums num">
-          <span class="hero-used">${fmtTok(ctx.used)}</span>
+          <span class="hero-used">${fmtTokHtml(ctx.used)}</span>
           <span class="hero-max">/ ${ctx.max > 0 ? fmtTok(ctx.max) : '未知上限'} tokens</span>
         </div>
         ${heroAlertHtml}
@@ -2758,7 +3664,7 @@
       <div class="bento">
         <div class="kpi">
           <div class="kpi-head"><span>生成速度</span><span class="kpi-tag">最新</span></div>
-          <div class="kpi-val num" style="color:var(--ok)">${fmtSpeed(speed.latestTokensPerSec)}</div>
+          <div class="kpi-val num" style="color:var(--ok-fg)">${fmtSpeedHtml(speed.latestTokensPerSec)}</div>
           <div class="kpi-sub num">
             均值 ${fmtSpeed(speed.avgTokensPerSec)} · 首字 ${fmtSec(speed.latestTtftSec)}
           </div>
@@ -2766,23 +3672,23 @@
 
         <div class="kpi">
           <div class="kpi-head"><span>缓存命中率</span><span class="kpi-tag">累计</span></div>
-          <div class="kpi-val num">${fmtPct(cache.overallHitRate)}</div>
+          <div class="kpi-val num">${fmtPctHtml(cache.overallHitRate)}</div>
           <div class="kpi-sub num">
             本轮 ${fmtPct(cache.latestHitRate)} · 省 ${fmtTok(cache.savedInputTokens)}
           </div>
         </div>
 
         <div class="kpi">
-          <div class="kpi-head"><span>累计输入</span><span class="kpi-tag">${data.turnCount} 轮</span></div>
-          <div class="kpi-val num">${fmtTok(totals.inputAll)}</div>
+          <div class="kpi-head"><span>累计输入</span><span class="kpi-tag num">${data.turnCount} 轮</span></div>
+          <div class="kpi-val num">${fmtTokHtml(totals.inputAll)}</div>
           <div class="kpi-sub num">
             新 ${fmtTok(totals.uncachedInput)} · 缓存 ${fmtTok(totals.cacheRead)}
           </div>
         </div>
 
         <div class="kpi">
-          <div class="kpi-head"><span>累计输出</span><span class="kpi-tag">${data.cost?.priced && data.cost.total > 0 ? `≈ ${fmtCost(data.cost.total)}` : `总 ${fmtTok(totals.all)}`}</span></div>
-          <div class="kpi-val num">${fmtTok(totals.output)}</div>
+          <div class="kpi-head"><span>累计输出</span><span class="kpi-tag num">${data.cost?.priced && data.cost.total > 0 ? `≈ ${fmtCost(data.cost.total)}` : `总 ${fmtTok(totals.all)}`}</span></div>
+          <div class="kpi-val num">${fmtTokHtml(totals.output)}</div>
           <div class="kpi-sub num">
             思考 ${fmtTok(totals.thinking)} · 回复 ${fmtTok(totals.response)}
           </div>
@@ -3022,7 +3928,11 @@
       if (!(await waitForTransitionReady(seq)) || viewMode !== 'summary') return;
       lastFetchError = '';
       lastSummaryFetchedAt = Date.now();
-      renderSummary(summary);
+      const serialized = serializePayload(summary);
+      if (force || serialized !== lastSummaryPayload) {
+        lastSummaryPayload = serialized;
+        renderSummary(summary);
+      }
       return;
     }
     try {
@@ -3057,7 +3967,11 @@
       const data = getMockMetrics(cid);
       if (!(await waitForTransitionReady(seq)) || viewMode !== 'session') return;
       lastFetchError = '';
-      render(data);
+      const serialized = serializePayload(data);
+      if (force || serialized !== lastSessionPayload) {
+        lastSessionPayload = serialized;
+        render(data);
+      }
       return;
     }
     try {

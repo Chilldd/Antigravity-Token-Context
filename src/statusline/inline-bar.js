@@ -1,5 +1,5 @@
 (() => {
-  const SCRIPT_VERSION = '18';
+  const SCRIPT_VERSION = '19';
   if (window.__agyCtxBarVersion === SCRIPT_VERSION) return 'already-bootstrapped';
   window.__agyCtxBarVersion = SCRIPT_VERSION;
   window.__agyCtxBarBootstrapped = true;
@@ -33,15 +33,19 @@
   }
 
   function isLightSurface() {
-    let el = document.getElementById(BAR_ID) || document.body;
+    const bar = document.getElementById(BAR_ID);
+    const qBar = document.getElementById(QUOTA_BAR_ID);
+    let el = (bar && bar.parentElement) || (qBar && qBar.parentElement) || document.body;
     while (el) {
-      const bg = getComputedStyle(el).backgroundColor || '';
-      const m = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
-      if (m) {
-        const alpha = m[4] === undefined ? 1 : Number(m[4]);
-        if (alpha > 0.1) {
-          const lum = (0.299 * Number(m[1]) + 0.587 * Number(m[2]) + 0.114 * Number(m[3])) / 255;
-          return lum > 0.5;
+      if (el !== bar && el !== qBar) {
+        const bg = getComputedStyle(el).backgroundColor || '';
+        const m = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+        if (m) {
+          const alpha = m[4] === undefined ? 1 : Number(m[4]);
+          if (alpha >= 0.75) {
+            const lum = (0.299 * Number(m[1]) + 0.587 * Number(m[2]) + 0.114 * Number(m[3])) / 255;
+            return lum > 0.5;
+          }
         }
       }
       el = el.parentElement;
@@ -57,6 +61,36 @@
     style.id = STYLE_ID;
     style.dataset.version = SCRIPT_VERSION;
     style.textContent = `
+      #${BAR_ID},
+      #${QUOTA_BAR_ID} {
+        --bar-accent: #6b93f2;
+        --bar-accent-bg: rgba(107, 147, 242, 0.14);
+        --bar-accent-border: rgba(107, 147, 242, 0.42);
+        --bar-ok: #4fd1af;
+        --bar-warn: #e0a043;
+        --bar-warn-fg: #f0b95e;
+        --bar-warn-bg: rgba(224, 160, 67, 0.13);
+        --bar-warn-border: rgba(224, 160, 67, 0.42);
+        --bar-danger: #e46464;
+        --bar-danger-fg: #f28484;
+        --bar-danger-bg: rgba(228, 100, 100, 0.14);
+        --bar-danger-border: rgba(228, 100, 100, 0.48);
+      }
+      #${BAR_ID}.agy-light,
+      #${QUOTA_BAR_ID}.agy-light {
+        --bar-accent: #3b6ce7;
+        --bar-accent-bg: rgba(59, 108, 231, 0.10);
+        --bar-accent-border: rgba(59, 108, 231, 0.36);
+        --bar-ok: #0b7258;
+        --bar-warn: #c9821e;
+        --bar-warn-fg: #9a5b0c;
+        --bar-warn-bg: rgba(201, 130, 30, 0.10);
+        --bar-warn-border: rgba(201, 130, 30, 0.36);
+        --bar-danger: #cf3a3a;
+        --bar-danger-fg: #b42828;
+        --bar-danger-bg: rgba(207, 58, 58, 0.10);
+        --bar-danger-border: rgba(207, 58, 58, 0.40);
+      }
       #${BAR_ID} {
         position: relative;
         display: inline-flex;
@@ -73,8 +107,9 @@
         border: 1px solid color-mix(in srgb, currentColor 11%, transparent);
         font-size: 11px;
         line-height: 1;
-        color: var(--muted-foreground, #6e7681);
+        color: var(--muted-foreground, #6b7280);
         font-variant-numeric: tabular-nums;
+        font-feature-settings: "tnum" 1;
         user-select: none;
         white-space: nowrap;
         transition: background-color 0.15s ease, border-color 0.15s ease;
@@ -110,12 +145,12 @@
         border-color: color-mix(in srgb, currentColor 20%, transparent);
       }
       #${BAR_ID}.agy-pinned {
-        background: color-mix(in srgb, #3b82f6 12%, transparent);
-        border-color: color-mix(in srgb, #3b82f6 45%, transparent);
+        background: var(--bar-accent-bg);
+        border-color: var(--bar-accent-border);
       }
       #${BAR_ID} .agy-ctx-main:focus-visible,
       #${BAR_ID} .agy-ctx-alert:focus-visible {
-        outline: 2px solid #3b82f6;
+        outline: 2px solid var(--bar-accent);
         outline-offset: 2px;
       }
       #${BAR_ID}.agy-err {
@@ -123,33 +158,27 @@
         opacity: 0.9;
       }
       #${BAR_ID}.agy-warn {
-        background: rgba(245, 158, 11, 0.10);
-        border-color: rgba(245, 158, 11, 0.45);
-        color: #fbbf24;
-      }
-      #${BAR_ID}.agy-warn.agy-light {
-        color: #b45309;
+        background: var(--bar-warn-bg);
+        border-color: var(--bar-warn-border);
+        color: var(--bar-warn-fg);
       }
       #${BAR_ID}.agy-warn:hover {
-        background: rgba(245, 158, 11, 0.16);
-        border-color: rgba(245, 158, 11, 0.65);
+        background: color-mix(in srgb, var(--bar-warn) 16%, transparent);
+        border-color: var(--bar-warn);
       }
       #${BAR_ID}.agy-crit {
-        background: rgba(239, 68, 68, 0.12);
-        border-color: rgba(239, 68, 68, 0.55);
-        color: #ef4444;
-        animation: agy-pulse-crit 2.2s ease-in-out infinite;
-      }
-      #${BAR_ID}.agy-crit.agy-light {
-        color: #dc2626;
+        background: var(--bar-danger-bg);
+        border-color: var(--bar-danger-border);
+        color: var(--bar-danger-fg);
+        animation: agy-pulse-crit 2.4s ease-in-out infinite;
       }
       #${BAR_ID}.agy-crit:hover {
-        background: rgba(239, 68, 68, 0.18);
-        border-color: rgba(239, 68, 68, 0.75);
+        background: color-mix(in srgb, var(--bar-danger) 18%, transparent);
+        border-color: var(--bar-danger);
       }
       @keyframes agy-pulse-crit {
-        0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.28); }
-        50% { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.08); }
+        0%, 100% { border-color: var(--bar-danger-border); }
+        50% { border-color: var(--bar-danger); }
       }
       @media (prefers-reduced-motion: reduce) {
         #${BAR_ID},
@@ -157,7 +186,9 @@
         #${BAR_ID} .agy-ctx-alert,
         #${BAR_ID} svg.agy-ring circle:nth-child(2),
         #${POPOVER_ID},
-        #${POPOVER_ID} .agy-pop-bar > div {
+        #${POPOVER_ID} .agy-pop-bar > div,
+        #${QUOTA_POP_ID},
+        #${QUOTA_POP_ID} .agy-qpop-bar > div {
           transition: none;
         }
         #${BAR_ID} .agy-ctx-main:active,
@@ -177,23 +208,21 @@
         font-weight: 600;
         padding: 1px 6px;
         border-radius: 999px;
-        background: #fbbf24;
+        background: var(--bar-warn-fg);
         color: #18181b;
         line-height: 1.25;
         flex: none;
       }
       #${BAR_ID}.agy-warn.agy-light .agy-ctx-alert {
-        background: #b45309;
+        background: var(--bar-warn-fg);
         color: #ffffff;
       }
       #${BAR_ID}.agy-crit .agy-ctx-alert {
-        background: #dc2626;
+        background: var(--bar-danger);
         color: #ffffff;
       }
-      #${BAR_ID}.agy-warn .agy-ctx-strong { color: #fbbf24; }
-      #${BAR_ID}.agy-warn.agy-light .agy-ctx-strong { color: #b45309; }
-      #${BAR_ID}.agy-crit .agy-ctx-strong { color: #ef4444; }
-      #${BAR_ID}.agy-crit.agy-light .agy-ctx-strong { color: #dc2626; }
+      #${BAR_ID}.agy-warn .agy-ctx-strong { color: var(--bar-warn-fg); }
+      #${BAR_ID}.agy-crit .agy-ctx-strong { color: var(--bar-danger-fg); }
       #${BAR_ID} .agy-ring-wrap {
         display: inline-flex;
         align-items: center;
@@ -206,8 +235,15 @@
         transform: rotate(-90deg);
         flex: none;
       }
-      #${BAR_ID} svg.agy-ring circle:nth-child(2) {
-        transition: stroke-dashoffset 0.55s cubic-bezier(0.25, 1, 0.5, 1), stroke 0.3s ease;
+      #${BAR_ID} svg.agy-ring .agy-ring-prog {
+        stroke: var(--bar-accent);
+        transition: stroke-dashoffset 0.55s cubic-bezier(0.25, 1, 0.5, 1), stroke 0.25s ease;
+      }
+      #${BAR_ID}.agy-warn svg.agy-ring .agy-ring-prog {
+        stroke: var(--bar-warn);
+      }
+      #${BAR_ID}.agy-crit svg.agy-ring .agy-ring-prog {
+        stroke: var(--bar-danger);
       }
       #${BAR_ID} .agy-ctx-strong {
         color: var(--foreground, inherit);
@@ -240,8 +276,9 @@
         border: 1px solid color-mix(in srgb, currentColor 11%, transparent);
         font-size: 11px;
         line-height: 1;
-        color: var(--muted-foreground, #6e7681);
+        color: var(--muted-foreground, #6b7280);
         font-variant-numeric: tabular-nums;
+        font-feature-settings: "tnum" 1;
         user-select: none;
         white-space: nowrap;
         transition: background-color 0.15s ease, border-color 0.15s ease;
@@ -251,8 +288,8 @@
         border-color: color-mix(in srgb, currentColor 20%, transparent);
       }
       #${QUOTA_BAR_ID}.agy-pinned {
-        background: color-mix(in srgb, #3b82f6 12%, transparent);
-        border-color: color-mix(in srgb, #3b82f6 45%, transparent);
+        background: var(--bar-accent-bg);
+        border-color: var(--bar-accent-border);
       }
       #${QUOTA_BAR_ID} .agy-quota-btn {
         appearance: none;
@@ -273,7 +310,7 @@
         cursor: pointer;
       }
       #${QUOTA_BAR_ID} .agy-quota-btn:focus-visible {
-        outline: 2px solid #3b82f6;
+        outline: 2px solid var(--bar-accent);
         outline-offset: 2px;
       }
       #${QUOTA_BAR_ID} .agy-quota-lbl {
@@ -283,33 +320,35 @@
         color: var(--foreground, inherit);
         font-weight: 600;
       }
-      #${QUOTA_BAR_ID} .agy-quota-val.low { color: #fbbf24; }
-      #${QUOTA_BAR_ID}.agy-light .agy-quota-val.low { color: #b45309; }
-      #${QUOTA_BAR_ID} .agy-quota-val.crit { color: #ef4444; }
-      #${QUOTA_BAR_ID}.agy-light .agy-quota-val.crit { color: #dc2626; }
+      #${QUOTA_BAR_ID} .agy-quota-val.low { color: var(--bar-warn-fg); }
+      #${QUOTA_BAR_ID} .agy-quota-val.crit { color: var(--bar-danger-fg); }
       #${QUOTA_BAR_ID} .agy-quota-sep {
-        opacity: 0.45;
+        opacity: 0.42;
       }
       #${POPOVER_ID},
       #${QUOTA_POP_ID} {
         position: fixed;
         z-index: 999999;
-        width: 272px;
-        padding: 11px 12px 10px;
-        border-radius: 12px;
+        width: 276px;
+        padding: 12px;
+        border-radius: 10px;
+        background: var(--pop-bg);
+        color: var(--pop-fg);
+        border: 1px solid var(--pop-border);
+        box-shadow: var(--pop-shadow);
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
         font-size: 11.5px;
         line-height: 1.4;
         font-variant-numeric: tabular-nums;
+        font-feature-settings: "tnum" 1;
         pointer-events: none;
         opacity: 0;
         transform: translateY(4px) scale(0.985);
-        transition: opacity 0.26s ease, transform 0.26s cubic-bezier(0.25, 1, 0.5, 1);
+        transition: opacity 0.22s ease, transform 0.22s cubic-bezier(0.25, 1, 0.5, 1);
         box-sizing: border-box;
       }
       #${QUOTA_POP_ID} {
-        width: 224px;
-        padding: 10px 11px 9px;
+        width: 236px;
       }
       #${POPOVER_ID}.visible,
       #${QUOTA_POP_ID}.visible {
@@ -319,55 +358,135 @@
       }
       #${POPOVER_ID}.light,
       #${QUOTA_POP_ID}.light {
-        background: #ffffff;
-        color: #18181b;
-        border: 1px solid rgba(15, 23, 42, 0.1);
-        box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12), 0 2px 6px rgba(15, 23, 42, 0.05);
-        --pop-dim: #71717a;
-        --pop-cell: #f4f4f5;
-        --pop-track: #e4e4e7;
+        --pop-bg: #ffffff;
+        --pop-fg: #111827;
+        --pop-dim: #6b7280;
+        --pop-cell: #f7f8fa;
+        --pop-cell-border: rgba(15, 23, 42, 0.06);
+        --pop-track: #e6e9f0;
         --pop-line: rgba(15, 23, 42, 0.07);
+        --pop-border: rgba(15, 23, 42, 0.09);
+        --pop-shadow: 0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 12px 24px -6px rgba(15, 23, 42, 0.11);
+        --pop-accent: #3b6ce7;
+        --pop-accent-fg: #2c56c8;
+        --pop-accent-bg: rgba(59, 108, 231, 0.09);
+        --pop-ok: #0f8b6c;
+        --pop-ok-fg: #0b7258;
+        --pop-ok-bg: rgba(15, 139, 108, 0.09);
+        --pop-warn: #c9821e;
+        --pop-warn-fg: #9a5b0c;
+        --pop-warn-bg: rgba(201, 130, 30, 0.10);
+        --pop-warn-border: rgba(201, 130, 30, 0.28);
+        --pop-danger: #cf3a3a;
+        --pop-danger-fg: #b42828;
+        --pop-danger-bg: rgba(207, 58, 58, 0.09);
+        --pop-danger-border: rgba(207, 58, 58, 0.28);
       }
       #${POPOVER_ID}.dark,
       #${QUOTA_POP_ID}.dark {
-        background: #1e2024;
-        color: #f4f4f5;
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        box-shadow: 0 14px 36px rgba(0, 0, 0, 0.5);
-        --pop-dim: #a1a1aa;
-        --pop-cell: rgba(255, 255, 255, 0.06);
-        --pop-track: rgba(255, 255, 255, 0.12);
+        --pop-bg: #1a1d24;
+        --pop-fg: #eef1f6;
+        --pop-dim: #8b94a5;
+        --pop-cell: #222630;
+        --pop-cell-border: rgba(255, 255, 255, 0.06);
+        --pop-track: rgba(255, 255, 255, 0.10);
         --pop-line: rgba(255, 255, 255, 0.08);
+        --pop-border: rgba(255, 255, 255, 0.11);
+        --pop-shadow: 0 8px 24px rgba(0, 0, 0, 0.48), 0 2px 6px rgba(0, 0, 0, 0.28);
+        --pop-accent: #6b93f2;
+        --pop-accent-fg: #8cb0f8;
+        --pop-accent-bg: rgba(107, 147, 242, 0.15);
+        --pop-ok: #2cb593;
+        --pop-ok-fg: #4fd1af;
+        --pop-ok-bg: rgba(44, 181, 147, 0.14);
+        --pop-warn: #e0a043;
+        --pop-warn-fg: #f0b95e;
+        --pop-warn-bg: rgba(224, 160, 67, 0.15);
+        --pop-warn-border: rgba(224, 160, 67, 0.34);
+        --pop-danger: #e46464;
+        --pop-danger-fg: #f28484;
+        --pop-danger-bg: rgba(228, 100, 100, 0.16);
+        --pop-danger-border: rgba(228, 100, 100, 0.36);
       }
-      #${POPOVER_ID} .agy-pop-head {
+      #${POPOVER_ID} .agy-u,
+      #${QUOTA_POP_ID} .agy-u {
+        font-size: 0.74em;
+        font-weight: 500;
+        color: var(--pop-dim);
+        margin-left: 1px;
+      }
+      #${POPOVER_ID} .agy-u-sp {
+        font-size: 0.66em;
+      }
+      #${POPOVER_ID} .agy-tone-accent,
+      #${QUOTA_POP_ID} .agy-tone-accent {
+        color: var(--pop-accent-fg);
+        background: var(--pop-accent-bg);
+      }
+      #${POPOVER_ID} .agy-tone-ok,
+      #${QUOTA_POP_ID} .agy-tone-ok {
+        color: var(--pop-ok-fg);
+        background: var(--pop-ok-bg);
+      }
+      #${POPOVER_ID} .agy-tone-warn,
+      #${QUOTA_POP_ID} .agy-tone-warn {
+        color: var(--pop-warn-fg);
+        background: var(--pop-warn-bg);
+      }
+      #${POPOVER_ID} .agy-tone-crit,
+      #${QUOTA_POP_ID} .agy-tone-crit {
+        color: var(--pop-danger-fg);
+        background: var(--pop-danger-bg);
+      }
+      #${POPOVER_ID} .agy-fill-accent,
+      #${QUOTA_POP_ID} .agy-fill-accent { background: var(--pop-accent); }
+      #${POPOVER_ID} .agy-fill-ok,
+      #${QUOTA_POP_ID} .agy-fill-ok { background: var(--pop-ok); }
+      #${POPOVER_ID} .agy-fill-warn,
+      #${QUOTA_POP_ID} .agy-fill-warn { background: var(--pop-warn); }
+      #${POPOVER_ID} .agy-fill-crit,
+      #${QUOTA_POP_ID} .agy-fill-crit { background: var(--pop-danger); }
+      #${QUOTA_POP_ID} .agy-text-ok { color: var(--pop-ok-fg); }
+      #${QUOTA_POP_ID} .agy-text-warn { color: var(--pop-warn-fg); }
+      #${QUOTA_POP_ID} .agy-text-crit { color: var(--pop-danger-fg); }
+      #${POPOVER_ID} .agy-pop-head,
+      #${QUOTA_POP_ID} .agy-qpop-head {
         display: flex;
         justify-content: space-between;
         align-items: center;
         gap: 8px;
         font-weight: 600;
         font-size: 12px;
-        margin-bottom: 8px;
+        margin-bottom: 9px;
       }
       #${POPOVER_ID} .agy-pop-model {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
-      #${POPOVER_ID} .agy-pop-badge {
-        font-size: 11px;
+      #${POPOVER_ID} .agy-pop-badge,
+      #${QUOTA_POP_ID} .agy-qpop-badge {
+        font-size: 10.5px;
         font-weight: 600;
         padding: 2px 7px;
         border-radius: 999px;
         flex: none;
       }
-      #${POPOVER_ID} .agy-pop-bar {
+      #${POPOVER_ID} .agy-pop-bar,
+      #${QUOTA_POP_ID} .agy-qpop-bar {
         height: 4px;
         border-radius: 999px;
         background: var(--pop-track);
         overflow: hidden;
+      }
+      #${POPOVER_ID} .agy-pop-bar {
         margin: 5px 0 9px;
       }
-      #${POPOVER_ID} .agy-pop-bar > div {
+      #${QUOTA_POP_ID} .agy-qpop-bar {
+        margin: 5px 0 4px;
+      }
+      #${POPOVER_ID} .agy-pop-bar > div,
+      #${QUOTA_POP_ID} .agy-qpop-bar > div {
         height: 100%;
         border-radius: 999px;
         transition: width 0.55s cubic-bezier(0.25, 1, 0.5, 1);
@@ -377,10 +496,18 @@
         grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
         gap: 6px;
       }
-      #${POPOVER_ID} .agy-pop-cell {
-        padding: 7px 8px;
-        border-radius: 8px;
+      #${POPOVER_ID} .agy-pop-cell,
+      #${QUOTA_POP_ID} .agy-qpop-item {
+        padding: 8px 9px;
+        border-radius: 7px;
         background: var(--pop-cell);
+        border: 1px solid var(--pop-cell-border);
+      }
+      #${QUOTA_POP_ID} .agy-qpop-item {
+        margin-bottom: 6px;
+      }
+      #${QUOTA_POP_ID} .agy-qpop-item:last-of-type {
+        margin-bottom: 0;
       }
       #${POPOVER_ID} .agy-pop-k {
         font-size: 10.5px;
@@ -389,8 +516,9 @@
         color: var(--pop-dim);
       }
       #${POPOVER_ID} .agy-pop-v {
-        font-size: 13.5px;
+        font-size: 14px;
         font-weight: 700;
+        letter-spacing: -0.02em;
         margin-top: 2px;
       }
       #${POPOVER_ID} .agy-pop-sub {
@@ -398,11 +526,12 @@
         color: var(--pop-dim);
         margin-top: 2px;
       }
-      #${POPOVER_ID} .agy-pop-foot {
+      #${POPOVER_ID} .agy-pop-foot,
+      #${QUOTA_POP_ID} .agy-qpop-foot {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-top: 8px;
+        margin-top: 9px;
         padding-top: 7px;
         border-top: 1px solid var(--pop-line);
         font-size: 10.5px;
@@ -418,28 +547,6 @@
       #${POPOVER_ID} .agy-pop-dim {
         color: var(--pop-dim);
       }
-      #${QUOTA_POP_ID} .agy-qpop-head {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 8px;
-        font-weight: 600;
-        font-size: 12px;
-        margin-bottom: 8px;
-      }
-      #${QUOTA_POP_ID} .agy-qpop-badge {
-        font-size: 10.5px;
-        font-weight: 600;
-        padding: 1px 6px;
-        border-radius: 999px;
-        flex: none;
-      }
-      #${QUOTA_POP_ID} .agy-qpop-item {
-        padding: 7px 8px;
-        border-radius: 8px;
-        background: var(--pop-cell);
-        margin-bottom: 6px;
-      }
       #${QUOTA_POP_ID} .agy-qpop-row {
         display: flex;
         justify-content: space-between;
@@ -451,31 +558,10 @@
         font-weight: 600;
       }
       #${QUOTA_POP_ID} .agy-qpop-pct {
+        font-size: 12.5px;
         font-weight: 700;
       }
-      #${QUOTA_POP_ID} .agy-qpop-bar {
-        height: 4px;
-        border-radius: 999px;
-        background: var(--pop-track);
-        overflow: hidden;
-        margin: 5px 0 4px;
-      }
-      #${QUOTA_POP_ID} .agy-qpop-bar > div {
-        height: 100%;
-        border-radius: 999px;
-        transition: width 0.55s cubic-bezier(0.25, 1, 0.5, 1);
-      }
       #${QUOTA_POP_ID} .agy-qpop-reset {
-        font-size: 10px;
-        color: var(--pop-dim);
-      }
-      #${QUOTA_POP_ID} .agy-qpop-foot {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-top: 6px;
-        padding-top: 6px;
-        border-top: 1px solid var(--pop-line);
         font-size: 10px;
         color: var(--pop-dim);
       }
@@ -492,33 +578,25 @@
         line-height: 1.35;
       }
       #${POPOVER_ID} .agy-pop-alert.warn {
-        background: rgba(245, 158, 11, 0.12);
-        color: #fbbf24;
-        border: 1px solid rgba(245, 158, 11, 0.35);
-      }
-      #${POPOVER_ID}.light .agy-pop-alert.warn {
-        color: #b45309;
+        background: var(--pop-warn-bg);
+        color: var(--pop-warn-fg);
+        border: 1px solid var(--pop-warn-border);
       }
       #${POPOVER_ID} .agy-pop-alert.crit {
-        background: rgba(239, 68, 68, 0.14);
-        color: #ef4444;
-        border: 1px solid rgba(239, 68, 68, 0.4);
+        background: var(--pop-danger-bg);
+        color: var(--pop-danger-fg);
+        border: 1px solid var(--pop-danger-border);
       }
       #${POPOVER_ID} .agy-pop-err-msg {
         padding: 7px 8px;
         border-radius: 7px;
-        background: rgba(239, 68, 68, 0.10);
-        border: 1px solid rgba(239, 68, 68, 0.30);
-        color: #f87171;
+        background: var(--pop-danger-bg);
+        border: 1px solid var(--pop-danger-border);
+        color: var(--pop-danger-fg);
         font-size: 11px;
         line-height: 1.45;
         word-break: break-word;
         margin-bottom: 8px;
-      }
-      #${POPOVER_ID}.light .agy-pop-err-msg {
-        color: #b91c1c;
-        background: #fef2f2;
-        border-color: rgba(220, 38, 38, 0.25);
       }
       #${POPOVER_ID} .agy-pop-err-tip {
         font-size: 11px;
@@ -573,6 +651,27 @@
     if (v >= 1e6) return (v / 1e6).toFixed(v % 1e6 === 0 ? 0 : 2) + 'M';
     if (v >= 1e3) return (v / 1e3).toFixed(1) + 'k';
     return String(Math.round(v));
+  }
+
+  function fmtTokHtml(n) {
+    const v = Number(n) || 0;
+    if (v >= 1e6) {
+      return `${(v / 1e6).toFixed(v % 1e6 === 0 ? 0 : 2)}<span class="agy-u">M</span>`;
+    }
+    if (v >= 1e3) {
+      return `${(v / 1e3).toFixed(1)}<span class="agy-u">k</span>`;
+    }
+    return String(Math.round(v));
+  }
+
+  function fmtPctHtml(v) {
+    if (v == null || !Number.isFinite(Number(v))) return '-';
+    return `${Number(v).toFixed(1)}<span class="agy-u">%</span>`;
+  }
+
+  function fmtSpeedHtml(v) {
+    if (v == null || !Number.isFinite(Number(v))) return '-';
+    return `${Number(v).toFixed(0)}<span class="agy-u agy-u-sp"> tok/s</span>`;
   }
 
   function fmtResetRemain(resetTime) {
@@ -657,7 +756,7 @@
     return null;
   }
 
-  function positionPopover(bar, pop, popWidth = 272) {
+  function positionPopover(bar, pop, popWidth = 276) {
     const br = bar.getBoundingClientRect();
     const left = Math.max(8, Math.min(window.innerWidth - popWidth - 8, br.left));
     pop.style.left = left + 'px';
@@ -670,7 +769,7 @@
     if (!quotaPopPinned) hideQuotaPopover(false);
     const pop = ensurePopover(POPOVER_ID);
     renderPopover(pop, lastData);
-    positionPopover(bar, pop, 272);
+    positionPopover(bar, pop, 276);
     pop.classList.add('visible');
     const mainBtn = bar.querySelector('.agy-ctx-main');
     if (mainBtn) mainBtn.setAttribute('aria-expanded', 'true');
@@ -696,7 +795,7 @@
     if (!popPinned) hidePopover(false);
     const pop = ensurePopover(QUOTA_POP_ID);
     renderQuotaPopover(pop, quota);
-    positionPopover(qBar, pop, 224);
+    positionPopover(qBar, pop, 236);
     pop.classList.add('visible');
     const btn = qBar.querySelector('.agy-quota-btn');
     if (btn) btn.setAttribute('aria-expanded', 'true');
@@ -877,8 +976,12 @@
     mainBtn.addEventListener('click', () => {
       if (!lastData || lastData.empty) return;
       popPinned = !popPinned;
-      if (popPinned) showPopover(bar);
-      else hidePopover(true);
+      if (popPinned) {
+        hideQuotaPopover(true);
+        showPopover(bar);
+      } else {
+        hidePopover(true);
+      }
     });
     alertBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -935,8 +1038,12 @@
       const quota = lastData?.quota;
       if (!quota || (!quota.fiveHour && !quota.weekly)) return;
       quotaPopPinned = !quotaPopPinned;
-      if (quotaPopPinned) showQuotaPopover(qBar);
-      else hideQuotaPopover(true);
+      if (quotaPopPinned) {
+        hidePopover(true);
+        showQuotaPopover(qBar);
+      } else {
+        hideQuotaPopover(true);
+      }
     });
 
     const ctxBar = document.getElementById(BAR_ID);
@@ -951,7 +1058,6 @@
   }
 
   function renderQuotaPopover(pop, quota) {
-    const light = isLightSurface();
     const fiveHour = quota?.fiveHour;
     const weekly = quota?.weekly;
     const minPct = Math.min(
@@ -959,33 +1065,20 @@
       weekly ? weekly.pct : 100,
     );
     const statusText = minPct <= 5 ? '紧张' : (minPct <= 20 ? '偏低' : '充裕');
-    const badgeColor = minPct <= 5
-      ? (light ? '#dc2626' : '#ef4444')
-      : minPct <= 20
-        ? (light ? '#b45309' : '#fbbf24')
-        : (light ? '#15803d' : '#4ade80');
-    const badgeBg = minPct <= 5
-      ? (light ? '#fef2f2' : 'rgba(239,68,68,0.16)')
-      : minPct <= 20
-        ? (light ? '#fffbeb' : 'rgba(245,158,11,0.16)')
-        : (light ? '#f0fdf4' : 'rgba(74,222,128,0.15)');
+    const headTone = minPct <= 5 ? 'crit' : (minPct <= 20 ? 'warn' : 'ok');
 
     const renderBucket = (label, bucket) => {
       if (!bucket) return '';
       const pct = Math.max(0, Math.min(100, Number(bucket.pct) || 0));
-      const barColor = pct <= 5
-        ? (light ? '#dc2626' : '#ef4444')
-        : pct <= 20
-          ? (light ? '#b45309' : '#fbbf24')
-          : (light ? '#16a34a' : '#22c55e');
+      const level = pct <= 5 ? 'crit' : (pct <= 20 ? 'warn' : 'ok');
       const reset = fmtResetRemain(bucket.resetTime);
       return `
         <div class="agy-qpop-item">
           <div class="agy-qpop-row">
             <span class="agy-qpop-name">${label}</span>
-            <span class="agy-qpop-pct" style="color:${barColor}">${pct}%</span>
+            <span class="agy-qpop-pct agy-text-${level}">${pct}<span class="agy-u">%</span></span>
           </div>
-          <div class="agy-qpop-bar"><div style="width:${pct}%;background:${barColor}"></div></div>
+          <div class="agy-qpop-bar"><div class="agy-fill-${level}" style="width:${pct}%"></div></div>
           <div class="agy-qpop-reset">${reset ? `${reset} 后重置` : '重置时间未知'}</div>
         </div>
       `;
@@ -994,7 +1087,7 @@
     pop.innerHTML = `
       <div class="agy-qpop-head">
         <span>Gemini 额度</span>
-        <span class="agy-qpop-badge" style="color:${badgeColor};background:${badgeBg}">${statusText}</span>
+        <span class="agy-qpop-badge agy-tone-${headTone}">${statusText}</span>
       </div>
       ${renderBucket('5 小时额度', fiveHour)}
       ${renderBucket('7 天额度', weekly)}
@@ -1014,17 +1107,14 @@
   }
 
   function renderPopover(pop, data) {
-    const light = isLightSurface();
     if (data.error) {
       const errMsg = (typeof data.error === 'string' && data.error)
         ? data.error
         : (data.message || '连接已断开');
-      const badgeColor = light ? '#dc2626' : '#f87171';
-      const badgeBg = light ? '#fef2f2' : 'rgba(239,68,68,0.16)';
       pop.innerHTML = `
         <div class="agy-pop-head">
           <span class="agy-pop-model">连接异常</span>
-          <span class="agy-pop-badge" style="color:${badgeColor};background:${badgeBg}">离线</span>
+          <span class="agy-pop-badge agy-tone-crit">离线</span>
         </div>
         <div class="agy-pop-err-msg">${esc(errMsg)}</div>
         <div class="agy-pop-err-tip">请检查语言服务器或 CDP 调试端口是否已启动，或打开右侧 Token 监控面板点击「刷新」；状态栏将在连接恢复后自动更新。</div>
@@ -1049,12 +1139,11 @@
     const totals = data.totals || {};
 
     const pct = Math.max(0, Math.min(100, Number(ctx.pct) || 0));
-    const color = pct >= 90 ? (light ? '#dc2626' : '#ef4444') : pct >= 75 ? (light ? '#b45309' : '#fbbf24') : (light ? '#2563eb' : '#60a5fa');
-    const badgeBg = pct >= 90 ? (light ? '#fef2f2' : 'rgba(239,68,68,0.16)') : pct >= 75 ? (light ? '#fffbeb' : 'rgba(245,158,11,0.16)') : (light ? '#eff6ff' : 'rgba(59,130,246,0.18)');
-    const latestSpeed = speed.latestTokensPerSec != null ? speed.latestTokensPerSec.toFixed(0) + ' tok/s' : '-';
+    const level = pct >= 90 ? 'crit' : (pct >= 75 ? 'warn' : 'accent');
+    const latestSpeedHtml = fmtSpeedHtml(speed.latestTokensPerSec);
     const avgSpeed = speed.avgTokensPerSec != null ? '均值 ' + speed.avgTokensPerSec.toFixed(0) + ' tok/s' : '均值 -';
     const ttft = speed.latestTtftSec != null ? '首字 ' + speed.latestTtftSec.toFixed(1) + 's' : '首字 -';
-    const hitAll = cache.overallHitRate != null ? cache.overallHitRate.toFixed(1) + '%' : '-';
+    const hitAllHtml = fmtPctHtml(cache.overallHitRate);
     const hitLast = cache.latestHitRate != null ? '本轮 ' + cache.latestHitRate.toFixed(1) + '%' : '本轮 -';
 
     const alertHtml = pct >= 90
@@ -1066,33 +1155,33 @@
     pop.innerHTML = `
       <div class="agy-pop-head">
         <span class="agy-pop-model">${esc(data.modelName || '当前上下文')}</span>
-        <span class="agy-pop-badge" style="color:${color};background:${badgeBg}">${pct.toFixed(1)}%</span>
+        <span class="agy-pop-badge agy-tone-${level}">${pct.toFixed(1)}<span class="agy-u">%</span></span>
       </div>
       <div class="agy-pop-row">
         <span class="agy-pop-dim">上下文占用</span>
-        <span><b>${fmtTok(ctx.used)}</b> / ${ctx.max ? fmtTok(ctx.max) : '?'}</span>
+        <span><b>${fmtTokHtml(ctx.used)}</b> <span class="agy-pop-dim">/ ${ctx.max ? fmtTok(ctx.max) : '?'}</span></span>
       </div>
-      <div class="agy-pop-bar"><div style="width:${pct.toFixed(1)}%;background:${color}"></div></div>
+      <div class="agy-pop-bar"><div class="agy-fill-${level}" style="width:${pct.toFixed(1)}%"></div></div>
       ${alertHtml}
       <div class="agy-pop-grid">
         <div class="agy-pop-cell">
           <div class="agy-pop-k">生成速度</div>
-          <div class="agy-pop-v">${latestSpeed}</div>
+          <div class="agy-pop-v">${latestSpeedHtml}</div>
           <div class="agy-pop-sub">${avgSpeed}<br>${ttft}</div>
         </div>
         <div class="agy-pop-cell">
           <div class="agy-pop-k">缓存命中</div>
-          <div class="agy-pop-v">${hitAll}</div>
+          <div class="agy-pop-v">${hitAllHtml}</div>
           <div class="agy-pop-sub">${hitLast}</div>
         </div>
         <div class="agy-pop-cell">
           <div class="agy-pop-k">累计输入</div>
-          <div class="agy-pop-v">${fmtTok(totals.inputAll)}</div>
+          <div class="agy-pop-v">${fmtTokHtml(totals.inputAll)}</div>
           <div class="agy-pop-sub">新 ${fmtTok(totals.uncachedInput)}</div>
         </div>
         <div class="agy-pop-cell">
           <div class="agy-pop-k">累计输出</div>
-          <div class="agy-pop-v">${fmtTok(totals.output)}</div>
+          <div class="agy-pop-v">${fmtTokHtml(totals.output)}</div>
           <div class="agy-pop-sub">思考 ${fmtTok(totals.thinking)}</div>
         </div>
       </div>
@@ -1128,7 +1217,7 @@
         <span class="agy-ring-wrap">
           <svg class="agy-ring" viewBox="0 0 16 16" aria-hidden="true">
             <circle class="agy-ring-track" cx="8" cy="8" r="${r}" fill="none" stroke="color-mix(in srgb, currentColor 22%, transparent)" stroke-width="2"></circle>
-            <circle class="agy-ring-prog" cx="8" cy="8" r="${r}" fill="none" stroke="#3b82f6" stroke-width="2"
+            <circle class="agy-ring-prog" cx="8" cy="8" r="${r}" fill="none" stroke-width="2"
               stroke-linecap="round" stroke-dasharray="${circ}" stroke-dashoffset="${circ}"></circle>
           </svg>
           <span class="agy-ctx-strong" data-slot="pct">0%</span>
@@ -1186,7 +1275,7 @@
     const qPop = document.getElementById(QUOTA_POP_ID);
     if (qPop && qPop.classList.contains('visible')) {
       renderQuotaPopover(qPop, quota);
-      positionPopover(qBar, qPop, 224);
+      positionPopover(qBar, qPop, 236);
     }
   }
 
@@ -1230,7 +1319,7 @@
       const pop = document.getElementById(POPOVER_ID);
       if (pop && pop.classList.contains('visible')) {
         renderPopover(pop, data);
-        positionPopover(bar, pop, 272);
+        positionPopover(bar, pop, 276);
       }
       return;
     }
@@ -1270,7 +1359,6 @@
 
     const pct = Math.max(0, Math.min(100, Number(ctx.pct) || 0));
     const pctRounded = pct.toFixed(0);
-    const color = pct >= 90 ? '#ef4444' : pct >= 75 ? '#f59e0b' : '#3b82f6';
     const tokSpeed = speed.latestTokensPerSec != null ? speed.latestTokensPerSec.toFixed(0) + ' tok/s' : '-';
     const totalTok = fmtTok(totals.all);
     const alertText = pct >= 90 ? '快满 · /compact' : (pct >= 75 ? '建议 /compact' : '');
@@ -1288,7 +1376,6 @@
       if (track) track.removeAttribute('stroke-dasharray');
       if (prog) {
         prog.style.display = '';
-        prog.setAttribute('stroke', color);
         prog.setAttribute('stroke-dashoffset', (circ * (1 - pct / 100)).toFixed(2));
       }
 
@@ -1315,7 +1402,7 @@
     const pop = document.getElementById(POPOVER_ID);
     if (pop && pop.classList.contains('visible')) {
       renderPopover(pop, data);
-      positionPopover(bar, pop, 272);
+      positionPopover(bar, pop, 276);
     }
   }
 

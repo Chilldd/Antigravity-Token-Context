@@ -70,13 +70,13 @@ function estimateTextTokens(text) {
 }
 
 const TOOL_GROUPS = {
-  command: { key: 'command', name: '命令执行', color: '#7dd3fc' },
-  file_edit: { key: 'file_edit', name: '文件修改', color: '#f5a98b' },
-  file_read: { key: 'file_read', name: '读取文件', color: '#fcd34d' },
-  search: { key: 'search', name: '检索与网络', color: '#d6b89c' },
-  agent: { key: 'agent', name: '代理协作', color: '#bef264' },
-  model: { key: 'model', name: '模型回复', color: '#fca5a5' },
-  other: { key: 'other', name: '其他工具', color: '#93c5fd' },
+  command: { key: 'command', name: '命令执行', color: '#4b7be5' },
+  file_edit: { key: 'file_edit', name: '文件修改', color: '#c98a2b' },
+  file_read: { key: 'file_read', name: '读取文件', color: '#1f9d81' },
+  search: { key: 'search', name: '检索与网络', color: '#64748b' },
+  agent: { key: 'agent', name: '代理协作', color: '#3a8ca3' },
+  model: { key: 'model', name: '模型回复', color: '#7c6fd6' },
+  other: { key: 'other', name: '其他工具', color: '#8c95a4' },
 };
 
 function classifyStepTool(step) {
@@ -242,15 +242,15 @@ function computeBreakdownFromServer(tokenBreakdown, contextUsed, contextMax) {
   const limit = contextMax > 0 ? contextMax : Math.max(used, 1);
 
   const items = [
-    { key: 'system', name: '系统提示词', color: '#9aa0a6', tokens: sysPromptTok },
-    { key: 'systools', name: '内置工具定义', color: '#78716c', tokens: sysToolsTok },
-    { key: 'skills', name: 'Skills', color: '#c084fc', tokens: skillsTok },
-    { key: 'subagents', name: 'Subagents', color: '#a855f7', tokens: subagentsTok },
-    { key: 'other', name: '规则与其它', color: '#a78bfa', tokens: otherTok },
-    { key: 'sysmsg', name: '系统通知', color: '#f87171', tokens: sysMsgTok },
-    { key: 'user', name: '用户消息 (User)', color: '#93c5fd', tokens: userTok },
-    { key: 'agent', name: 'Agent 回复', color: '#3b82f6', tokens: agentTok },
-    { key: 'tool', name: '工具调用 (Tools)', color: '#f59e0b', tokens: toolTok },
+    { key: 'system', name: '系统提示词', color: '#94a3b8', tokens: sysPromptTok },
+    { key: 'systools', name: '内置工具定义', color: '#64748b', tokens: sysToolsTok },
+    { key: 'skills', name: 'Skills', color: '#7c6fd6', tokens: skillsTok },
+    { key: 'subagents', name: 'Subagents', color: '#9a8fe2', tokens: subagentsTok },
+    { key: 'other', name: '规则与其它', color: '#b4acec', tokens: otherTok },
+    { key: 'sysmsg', name: '系统通知', color: '#d97070', tokens: sysMsgTok },
+    { key: 'user', name: '用户消息 (User)', color: '#8aaef0', tokens: userTok },
+    { key: 'agent', name: 'Agent 回复', color: '#3b6ce7', tokens: agentTok },
+    { key: 'tool', name: '工具调用 (Tools)', color: '#d6943a', tokens: toolTok },
   ];
 
   const categories = items
@@ -308,15 +308,15 @@ function computeContextBreakdown(steps, contextUsed, contextMax, tokenBreakdown 
 
   const limit = contextMax > 0 ? contextMax : Math.max(used, 1);
   const items = [
-    { key: 'system', name: '系统提示词与内置工具', color: '#9aa0a6', tokens: sysBaseTok },
+    { key: 'system', name: '系统提示词与内置工具', color: '#94a3b8', tokens: sysBaseTok },
   ];
   if (sysMsgTok > 0) {
-    items.push({ key: 'sysmsg', name: '系统通知', color: '#f87171', tokens: sysMsgTok });
+    items.push({ key: 'sysmsg', name: '系统通知', color: '#d97070', tokens: sysMsgTok });
   }
   items.push(
-    { key: 'user', name: '用户消息 (User)', color: '#93c5fd', tokens: userTok },
-    { key: 'agent', name: 'Agent 回复', color: '#3b82f6', tokens: agentTok },
-    { key: 'tool', name: '工具调用 (Tools)', color: '#f59e0b', tokens: toolTok },
+    { key: 'user', name: '用户消息 (User)', color: '#8aaef0', tokens: userTok },
+    { key: 'agent', name: 'Agent 回复', color: '#3b6ce7', tokens: agentTok },
+    { key: 'tool', name: '工具调用 (Tools)', color: '#d6943a', tokens: toolTok },
   );
 
   const categories = items
