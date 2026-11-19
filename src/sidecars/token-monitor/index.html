@@ -1522,6 +1522,7 @@
   let turnsExpanded = false; // default collapsed
   let swarmExpanded = false; // default collapsed
   let subagentsExpanded = false; // default collapsed
+  let topConvsExpanded = false; // default collapsed
   let catsExpanded = false; // default Top 4
   let lastAnimatedSessionId = '';
   let pendingExpandAnim = '';
@@ -1546,6 +1547,7 @@
       if (typeof saved.turnsExpanded === 'boolean') turnsExpanded = saved.turnsExpanded;
       if (typeof saved.swarmExpanded === 'boolean') swarmExpanded = saved.swarmExpanded;
       if (typeof saved.subagentsExpanded === 'boolean') subagentsExpanded = saved.subagentsExpanded;
+      if (typeof saved.topConvsExpanded === 'boolean') topConvsExpanded = saved.topConvsExpanded;
       if (typeof saved.catsExpanded === 'boolean') catsExpanded = saved.catsExpanded;
     } catch {}
   }
@@ -1562,6 +1564,7 @@
         turnsExpanded,
         swarmExpanded,
         subagentsExpanded,
+        topConvsExpanded,
         catsExpanded,
       }));
     } catch {}
@@ -3413,34 +3416,41 @@
       ` : ''}
 
       <div class="sub-card">
-        <div class="card-head">
-          <span>${isCost ? '会话费用排行' : '会话消耗排行'}</span>
+        <button id="btn-toggle-top-convs" class="turns-toggle" type="button" aria-expanded="${topConvsExpanded}">
+          <span class="turns-toggle-left">
+            <svg class="chevron ${topConvsExpanded ? 'open' : ''}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M6 4l4 4-4 4"/>
+            </svg>
+            <span>${isCost ? '会话费用排行' : '会话消耗排行'}</span>
+          </span>
           <span class="dim num" style="font-weight:400;font-size:11px;">Top ${topConvs.length}</span>
-        </div>
-        <div class="sub-list">
-          ${topConvs.length === 0
-            ? '<p class="dim" style="font-size:11.5px;padding:12px;text-align:center;margin:0;">该时段暂无调用记录</p>'
-            : topConvs.map((c, idx) => `
-              <div class="sub-row" role="button" tabindex="0" data-conv-id="${esc(c.id)}" title="点击切换到该会话详情">
-                <span class="rank-idx num">${idx + 1}</span>
-                <div class="sub-left">
-                  <div class="sub-title">
-                    <span class="sub-role">${esc(c.title)}</span>
-                    ${c.subagentCount > 0 ? `<span class="state-pill idle num">+${c.subagentCount} 子代理</span>` : ''}
+        </button>
+        ${topConvsExpanded ? `
+          <div class="sub-list${pendingExpandAnim === 'topConvs' ? ' anim-reveal' : ''}">
+            ${topConvs.length === 0
+              ? '<p class="dim" style="font-size:11.5px;padding:12px;text-align:center;margin:0;">该时段暂无调用记录</p>'
+              : topConvs.map((c, idx) => `
+                <div class="sub-row" role="button" tabindex="0" data-conv-id="${esc(c.id)}" title="点击切换到该会话详情">
+                  <span class="rank-idx num">${idx + 1}</span>
+                  <div class="sub-left">
+                    <div class="sub-title">
+                      <span class="sub-role">${esc(c.title)}</span>
+                      ${c.subagentCount > 0 ? `<span class="state-pill idle num">+${c.subagentCount} 子代理</span>` : ''}
+                    </div>
+                    <div class="sub-meta num">
+                      ${esc(c.modelName)} · ${c.turns} 轮 · 命中 ${fmtPct(c.cacheHitRate)}
+                    </div>
                   </div>
-                  <div class="sub-meta num">
-                    ${esc(c.modelName)} · ${c.turns} 轮 · 命中 ${fmtPct(c.cacheHitRate)}
+                  <div class="sub-right num">
+                    ${isCost
+                      ? `<div class="sub-ctx" style="color:var(--warn-fg)">${fmtCostHtml(c.cost)}</div><div class="sub-ctx-sub">${fmtTok(c.totalTokens)}</div>`
+                      : `<div class="sub-ctx">${fmtTokHtml(c.totalTokens)}</div>${c.cost > 0 ? `<div class="sub-ctx-sub">${fmtCost(c.cost)}</div>` : ''}`}
                   </div>
+                  <svg class="row-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg>
                 </div>
-                <div class="sub-right num">
-                  ${isCost
-                    ? `<div class="sub-ctx" style="color:var(--warn-fg)">${fmtCostHtml(c.cost)}</div><div class="sub-ctx-sub">${fmtTok(c.totalTokens)}</div>`
-                    : `<div class="sub-ctx">${fmtTokHtml(c.totalTokens)}</div>${c.cost > 0 ? `<div class="sub-ctx-sub">${fmtCost(c.cost)}</div>` : ''}`}
-                </div>
-                <svg class="row-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg>
-              </div>
-            `).join('')}
-        </div>
+              `).join('')}
+          </div>
+        ` : ''}
       </div>
 
       <footer class="num">
@@ -3448,6 +3458,13 @@
         <span>${esc(updatedTime)}</span>
       </footer>
     `);
+
+    contentLayer.querySelector('#btn-toggle-top-convs')?.addEventListener('click', () => {
+      topConvsExpanded = !topConvsExpanded;
+      pendingExpandAnim = topConvsExpanded ? 'topConvs' : '';
+      saveUiState();
+      renderSummary(summary);
+    });
 
     contentLayer.querySelectorAll('.sub-row[data-conv-id]').forEach((el) => {
       const openConv = () => {
