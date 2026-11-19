@@ -1,0 +1,172 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-19T18:50:30+08:00",
+  "title": "Design System: Context & Token Monitor",
+  "extensions": {
+    "colorMeta": {
+      "cobalt-signal": {
+        "role": "primary",
+        "displayName": "Cobalt Signal",
+        "canonical": "#3b6ce7",
+        "tonalRamp": ["#111f47", "#1a2f6b", "#244191", "#2c56c8", "#3b6ce7", "#6b93f2", "#9eb9f7", "#dce6fc"]
+      },
+      "emerald-telemetry": {
+        "role": "semantic",
+        "displayName": "Emerald Telemetry",
+        "canonical": "#0f8b6c",
+        "tonalRamp": ["#062920", "#084032", "#0b5945", "#0b7258", "#0f8b6c", "#2cb593", "#6cd3b9", "#d5f2e9"]
+      },
+      "amber-threshold": {
+        "role": "semantic",
+        "displayName": "Amber Threshold",
+        "canonical": "#c9821e",
+        "tonalRamp": ["#331e04", "#543207", "#78480b", "#9a5b0c", "#c9821e", "#e0a043", "#efc07a", "#fcf5e8"]
+      },
+      "crimson-alert": {
+        "role": "semantic",
+        "displayName": "Crimson Alert",
+        "canonical": "#cf3a3a",
+        "tonalRamp": ["#3d0d0d", "#631616", "#8c1f1f", "#b42828", "#cf3a3a", "#e46464", "#f09999", "#fce8e8"]
+      },
+      "slate-canvas-light": {
+        "role": "neutral",
+        "displayName": "Slate Canvas (Light)",
+        "canonical": "#f7f8fa",
+        "tonalRamp": ["#0f172a", "#334155", "#64748b", "#94a3b8", "#cbd5e1", "#e2e6ee", "#f3f5f8", "#f7f8fa"]
+      },
+      "pure-surface-light": {
+        "role": "neutral",
+        "displayName": "Pure Surface (Light)",
+        "canonical": "#ffffff",
+        "tonalRamp": ["#111827", "#374151", "#6b7280", "#9ca3af", "#d1d5db", "#e5e7eb", "#f3f4f6", "#ffffff"]
+      },
+      "carbon-canvas-dark": {
+        "role": "neutral",
+        "displayName": "Carbon Canvas (Dark)",
+        "canonical": "#13151a",
+        "tonalRamp": ["#0b0c10", "#13151a", "#1a1d24", "#222630", "#2f3544", "#656e7f", "#8b94a5", "#eef1f6"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "上下文 Hero 卡片的已用 Token 主数值（.hero-used）。" },
+      "headline": { "displayName": "Headline", "purpose": "Bento 网格核心 KPI 数值（速度、命中率、累计输入输出、估算费用）。" },
+      "title": { "displayName": "Title", "purpose": "卡片标题、图表标题与顶部会话标题。" },
+      "body": { "displayName": "Body", "purpose": "全局基础字号与常规说明文本。" },
+      "label": { "displayName": "Label", "purpose": "指标头标签、次级副标题、角标、胶囊文本与分页提示。" }
+    },
+    "shadows": [
+      { "name": "card-shadow-light", "value": "0 1px 2px rgba(15, 23, 42, 0.03), 0 0 0 1px rgba(15, 23, 42, 0.015)", "purpose": "浅色模式下主卡片的微弱托底阴影。" },
+      { "name": "card-shadow-dark", "value": "0 1px 2px rgba(0, 0, 0, 0.24)", "purpose": "深色模式下主卡片的微弱托底阴影。" },
+      { "name": "seg-active-shadow", "value": "0 1px 2px rgba(15, 23, 42, 0.07), 0 0 0 0.5px rgba(15, 23, 42, 0.05)", "purpose": "分段控制器激活滑块的轻浮起阴影。" },
+      { "name": "tooltip-shadow", "value": "0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 12px 24px -6px rgba(15, 23, 42, 0.10)", "purpose": "悬停详情浮层与图表 Tooltip 的浮动投影。" }
+    ],
+    "motion": [
+      { "name": "ease-thumb", "value": "cubic-bezier(0.22, 1, 0.36, 1)", "purpose": "分段滑块与视图切换的弹性缓动（240ms）。" },
+      { "name": "ease-dot", "value": "cubic-bezier(0.25, 1, 0.5, 1)", "purpose": "100 点阵交错缩放入场与进度条过渡（220ms–550ms）。" },
+      { "name": "ease-hover", "value": "0.14s ease", "purpose": "按钮、卡片与行项悬停及按压缩放反馈。" }
+    ],
+    "breakpoints": [
+      { "name": "sidecar-compact", "value": "320px" },
+      { "name": "treemap-min", "value": "240px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "设置保存等主操作按钮，使用实心钴蓝底色与纯白加粗文字。",
+      "html": "<button type=\"button\" class=\"ds-btn-primary\">保存配置</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: 26px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--accent, #3b6ce7); background: var(--accent, #3b6ce7); color: #ffffff; font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; transition: background-color 0.14s ease, transform 0.1s ease; } .ds-btn-primary:hover { background: color-mix(in srgb, var(--accent, #3b6ce7) 88%, #000); } .ds-btn-primary:active { transform: scale(0.97); } .ds-btn-primary:focus-visible { outline: 2px solid var(--accent, #3b6ce7); outline-offset: 2px; }"
+    },
+    {
+      "name": "Icon Button",
+      "kind": "button",
+      "refersTo": "button-icon",
+      "description": "顶栏刷新、设置及分页控制等轻量边框按钮。",
+      "html": "<button type=\"button\" class=\"ds-icon-btn\" aria-label=\"刷新\"><svg viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M13.5 8a5.5 5.5 0 1 1-1.3-3.55\"/><path d=\"M13.5 2.5v2.7h-2.7\"/></svg><span>刷新</span></button>",
+      "css": ".ds-icon-btn { display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: 26px; padding: 0 8px; border-radius: 7px; font: inherit; font-size: 11.5px; color: var(--dim, #6b7280); background: var(--surface, #ffffff); border: 1px solid var(--line, rgba(15,23,42,0.08)); cursor: pointer; transition: color 0.14s ease, background-color 0.14s ease, border-color 0.14s ease, transform 0.1s ease; } .ds-icon-btn svg { width: 13px; height: 13px; } .ds-icon-btn:hover { color: var(--fg, #111827); background: var(--surface-subtle, #f3f5f8); border-color: var(--line-strong, rgba(15,23,42,0.14)); } .ds-icon-btn:active { transform: scale(0.97); } .ds-icon-btn:focus-visible { outline: 2px solid var(--accent, #3b6ce7); outline-offset: 2px; }"
+    },
+    {
+      "name": "Segmented Control",
+      "kind": "nav",
+      "refersTo": "segmented-control",
+      "description": "顶栏一级视图切换与时间范围分段控制器。",
+      "html": "<div class=\"ds-seg-bar\" role=\"tablist\"><button type=\"button\" class=\"ds-seg-btn active\" role=\"tab\" aria-selected=\"true\">当前会话</button><button type=\"button\" class=\"ds-seg-btn\" role=\"tab\" aria-selected=\"false\">全局汇总</button></div>",
+      "css": ".ds-seg-bar { display: inline-flex; align-items: center; padding: 2px; border-radius: 8px; background: var(--seg-bg, #eef0f4); border: 1px solid var(--line-subtle, rgba(15,23,42,0.055)); gap: 2px; } .ds-seg-btn { border: none; background: transparent; color: var(--dim, #6b7280); font: inherit; font-size: 11.5px; font-weight: 500; padding: 3px 9px; border-radius: 6px; cursor: pointer; transition: color 0.14s ease, background-color 0.14s ease, transform 0.1s ease; } .ds-seg-btn:hover { color: var(--fg, #111827); } .ds-seg-btn:active { transform: scale(0.97); } .ds-seg-btn.active { background: var(--seg-active-bg, #ffffff); color: var(--fg, #111827); font-weight: 600; box-shadow: var(--seg-active-shadow, 0 1px 2px rgba(15,23,42,0.07)); } .ds-seg-btn:focus-visible { outline: 2px solid var(--accent, #3b6ce7); outline-offset: 1px; }"
+    },
+    {
+      "name": "KPI Card",
+      "kind": "card",
+      "refersTo": "card-surface",
+      "description": "Bento 网格中的核心遥测指标单元，启用 tabular-nums 等宽数字。",
+      "html": "<div class=\"ds-kpi\"><div class=\"ds-kpi-head\"><span>估算费用</span><span class=\"ds-kpi-tag\">USD · 参考单价</span></div><div class=\"ds-kpi-val\"><span class=\"ds-val-prefix\">$</span>1.45</div><div class=\"ds-kpi-sub\">输入 $0.28 · 缓存 $0.31 · 输出 $0.86</div></div>",
+      "css": ".ds-kpi { background: var(--surface, #ffffff); border: 1px solid var(--line, rgba(15,23,42,0.08)); border-radius: 10px; padding: 11px 12px; font-variant-numeric: tabular-nums; transition: background-color 0.14s ease; } .ds-kpi:hover { background: var(--surface-subtle, #f3f5f8); } .ds-kpi-head { display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: var(--dim, #6b7280); margin-bottom: 5px; } .ds-kpi-tag { font-size: 10.5px; opacity: 0.85; } .ds-kpi-val { font-size: 19px; font-weight: 700; letter-spacing: -0.025em; color: var(--fg, #111827); line-height: 1.25; } .ds-val-prefix { font-size: 0.74em; font-weight: 500; opacity: 0.72; margin-right: 1px; } .ds-kpi-sub { font-size: 10.5px; color: var(--dim, #6b7280); margin-top: 4px; line-height: 1.4; }"
+    },
+    {
+      "name": "Input Field",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "单价与汇率设置页使用的紧凑内凹文本/数值输入框。",
+      "html": "<input class=\"ds-field-input\" type=\"text\" value=\"6.67\" aria-label=\"USD 到 CNY 汇率\" />",
+      "css": ".ds-field-input { width: 110px; height: 26px; padding: 0 7px; border-radius: 6px; border: 1px solid var(--line, rgba(15,23,42,0.08)); background: var(--bg-canvas, #f7f8fa); color: var(--fg, #111827); font: inherit; font-size: 11.5px; font-variant-numeric: tabular-nums; transition: border-color 0.14s ease; } .ds-field-input:focus { outline: 1.5px solid var(--accent, #3b6ce7); border-color: var(--accent, #3b6ce7); }"
+    },
+    {
+      "name": "Context Pill",
+      "kind": "chip",
+      "refersTo": "pill-badge",
+      "description": "顶部模型状态徽章与百分比水位胶囊。",
+      "html": "<span class=\"ds-pill\"><span class=\"ds-dot\"></span><span>Gemini 4 Hydrogen</span></span>",
+      "css": ".ds-pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px 3px 7px; border-radius: 999px; background: var(--surface, #ffffff); border: 1px solid var(--line, rgba(15,23,42,0.08)); font-size: 11.5px; font-weight: 600; color: var(--fg, #111827); } .ds-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok, #0f8b6c); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Precision Telemetry",
+    "overview": "本系统是一套面向 IDE 侧边栏与内嵌状态栏的精密遥测仪表盘设计语言。它以冷静、高信息密度和极低视觉噪音为核心诉求，让开发者在编码与长对话过程中，无需切出当前工作流即可一眼判断上下文水位、生成速度、缓存命中率与估算费用。\n\n系统天然服务于「操作与监控（Operate）」场景，拒绝装饰性渐变、大面积重阴影或与宿主 IDE 割裂的视觉风格。通过中性冷灰白（浅色模式）与深碳灰（深色模式）画布承托高对比的等宽数字与信号色，所有交互反馈保持克制、紧凑且可预测。",
+    "keyCharacteristics": [
+      "双主题自适应：通过 CSS 变量自动跟随 Antigravity 宿主主题（:root.light-surface / :root.dark-surface / prefers-color-scheme: dark）。",
+      "数字优先排版：所有指标、百分比、耗时与金额强制启用 tabular-nums 等宽数字对齐，数值单位以缩小的次级字号紧随其后。",
+      "极细发丝分隔：优先使用低透明度的 1px 线框与 1px 内嵌网格间隙建立结构，替代厚重阴影或高饱和色块。",
+      "信号色克制使用：主色钴蓝与状态色（翠绿、琥珀、绯红）仅用于关键水位告警、进度指示与激活焦点，日常界面保持中性克制。"
+    ],
+    "rules": [
+      {
+        "name": "The Signal Restraint Rule",
+        "body": "语义色（钴蓝、翠绿、琥珀、绯红）仅承载状态、告警与数据区分职责；普通卡片、导航与容器背景严禁大面积铺设高饱和彩色。",
+        "section": "colors"
+      },
+      {
+        "name": "The Host-Adaptive Dual Theme Rule",
+        "body": "所有颜色必须通过 CSS 自定义属性声明并同时定义浅色与深色两套映射，禁止在组件样式或脚本内硬编码单主题色值。",
+        "section": "colors"
+      },
+      {
+        "name": "The Tabular Numerals Rule",
+        "body": "凡涉及动态刷新的 Token 数、百分比、速度、耗时与金额，必须挂载 .num（tabular-nums），防止 2.5s 自动刷新时数字抖动。",
+        "section": "typography"
+      },
+      {
+        "name": "The Subordinate Unit Rule",
+        "body": "数值单位（k、M、tok/s）与货币前缀（$、¥）通过 .val-unit（0.64em）和 .val-prefix（0.74em）缩小并降低权重，突出核心数字。",
+        "section": "typography"
+      },
+      {
+        "name": "The Hairline Divider Rule",
+        "body": "优先使用 1px 低透明度边框（--line / --line-subtle）和 Bento 1px 网格间隙划分区域，禁止在常规卡片上叠加重阴影。",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do 为所有动态数字、金额、百分比与耗时添加 .num（tabular-nums），保持刷新时的视觉稳定。",
+      "Do 严格成对维护浅色与深色两套 CSS 变量，确保主题切换时对比度与语义清晰度一致。",
+      "Do 在窄侧边栏中控制标签与标题的单行溢出（white-space: nowrap; overflow: hidden; text-overflow: ellipsis;），并配合 title 提供完整文本。",
+      "Do 对可折叠区域、分段控件与异步加载提供平滑过渡（如等高骨架屏交叉淡入、滑块平移动画），并在 prefers-reduced-motion: reduce 下尊重系统减弱动画设置。"
+    ],
+    "donts": [
+      "Don't 在卡片或组件上使用重度弥散阴影、炫彩渐变背景或大面积高饱和色块，破坏精密遥测的冷静感。",
+      "Don't 引入需要打包构建的 CSS 框架或外部字体 CDN；所有样式与图标保持原生、轻量、离线可用。",
+      "Don't 在单价未命中或数据缺失时显示虚假金额或静默空白，必须给出明确的“未配置模型单价”或空状态引导。",
+      "Don't 让顶部或底部状态栏在未开启 CDP 或无会话时阻塞主界面或报错刷屏。"
+    ]
+  }
+}
