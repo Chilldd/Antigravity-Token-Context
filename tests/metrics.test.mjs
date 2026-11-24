@@ -184,3 +184,83 @@ test('computeTurnSpeed handles thinking streams, short bursts, and buffered flus
   assert.equal(computeTurnSpeed(100, null, 0.02), null);
   assert.equal(computeTurnSpeed(0, 2.0, 1.0), null);
 });
+
+test('computeTrajectoryMetrics detects orchestrator mode and aggregates per-model usage', () => {
+  const catalog = {
+    'MODEL_PLACEHOLDER_M533': { displayName: 'Gemini 4 Neon (Medium)', maxTokens: 1000000 },
+    'MODEL_PLACEHOLDER_M526': { displayName: 'Gemini 4 Hydrogen (Medium)', maxTokens: 1000000 },
+  };
+
+  const orchResp = {
+    status: 'CASCADE_RUN_STATUS_IDLE',
+    trajectory: {
+      cascadeId: 'orch-1',
+      steps: [
+        { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', metadata: { toolCall: { name: 'exit_plan_mode' } } },
+      ],
+      generatorMetadata: [
+        {
+          chatModel: {
+            model: 'MODEL_PLACEHOLDER_M533',
+            modelDisplayName: 'Gemini 4 Neon (Medium)',
+            usage: { inputTokens: 1000, cacheReadTokens: 2000, outputTokens: 500 },
+          },
+          plannerConfig: {
+            planModel: 'MODEL_PLACEHOLDER_M533',
+            planExecuteConfig: { executionModel: 'MODEL_PLACEHOLDER_M526' },
+            declarativeMixinConfig: {
+              promptSections: [{ builtinName: 'plan_execute_protocol' }],
+            },
+          },
+        },
+        {
+          chatModel: {
+            model: 'MODEL_PLACEHOLDER_M526',
+            modelDisplayName: 'Gemini 4 Hydrogen (Medium)',
+            usage: { inputTokens: 500, cacheReadTokens: 4000, outputTokens: 1000 },
+          },
+        },
+      ],
+    },
+  };
+
+  const orchMetrics = computeTrajectoryMetrics(orchResp, catalog);
+  assert.equal(orchMetrics.orchestrator.enabled, true);
+  assert.equal(orchMetrics.orchestrator.planModelName, 'Gemini 4 Neon (Medium)');
+  assert.equal(orchMetrics.orchestrator.executionModelName, 'Gemini 4 Hydrogen (Medium)');
+  assert.equal(orchMetrics.modelBreakdown.length, 2);
+
+  const execModel = orchMetrics.modelBreakdown.find((m) => m.role === 'execute');
+  const planModel = orchMetrics.modelBreakdown.find((m) => m.role === 'plan');
+  assert.equal(execModel.modelName, 'Gemini 4 Hydrogen (Medium)');
+  assert.equal(execModel.tokens, 5500);
+  assert.equal(execModel.input, 4500);
+  assert.equal(execModel.cacheRead, 4000);
+  assert.equal(execModel.output, 1000);
+  assert.equal(planModel.modelName, 'Gemini 4 Neon (Medium)');
+  assert.equal(planModel.tokens, 3500);
+  assert.ok(Math.abs(execModel.pct - (5500 / 9000) * 100) < 1e-6);
+
+  const regularResp = {
+    status: 'CASCADE_RUN_STATUS_IDLE',
+    trajectory: {
+      cascadeId: 'reg-1',
+      steps: [],
+      generatorMetadata: [
+        {
+          chatModel: {
+            model: 'MODEL_PLACEHOLDER_M526',
+            modelDisplayName: 'Gemini 4 Hydrogen (Medium)',
+            usage: { inputTokens: 200, outputTokens: 100 },
+          },
+          plannerConfig: { modelName: 'MODEL_PLACEHOLDER_M526' },
+        },
+      ],
+    },
+  };
+
+  const regMetrics = computeTrajectoryMetrics(regularResp, catalog);
+  assert.equal(regMetrics.orchestrator.enabled, false);
+  assert.equal(regMetrics.modelBreakdown.length, 1);
+  assert.equal(regMetrics.modelBreakdown[0].role, '');
+});

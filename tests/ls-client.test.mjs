@@ -411,6 +411,11 @@ test('applyBoardAction handles star, archive, batch archive, seenAt, and v1 migr
     const afterBatch = getBoardStateMap(cfgPath);
     assert.equal(afterBatch['c3'].archived, true);
     assert.equal(afterBatch['c4'].archived, true);
+
+    applyBoardAction({ action: 'rename', id: 'c5', title: '我的自定义会话名' }, cfgPath);
+    assert.equal(getBoardStateMap(cfgPath)['c5'].customTitle, '我的自定义会话名');
+    applyBoardAction({ action: 'rename', id: 'c5', title: '' }, cfgPath);
+    assert.equal(getBoardStateMap(cfgPath)['c5'], undefined);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

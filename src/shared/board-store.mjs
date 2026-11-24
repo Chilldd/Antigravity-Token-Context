@@ -23,9 +23,10 @@ function normalizeCardEntry(raw) {
   const archived = Boolean(raw.archived);
   const archivedAt = archived && typeof raw.archivedAt === 'string' ? raw.archivedAt : '';
   const seenAt = typeof raw.seenAt === 'string' ? raw.seenAt : '';
+  const customTitle = typeof raw.customTitle === 'string' ? raw.customTitle.trim() : '';
   const updatedAt = typeof raw.updatedAt === 'string' ? raw.updatedAt : '';
 
-  if (!starred && !archived && !seenAt && !column) {
+  if (!starred && !archived && !seenAt && !column && !customTitle) {
     return null;
   }
 
@@ -37,6 +38,7 @@ function normalizeCardEntry(raw) {
   }
   if (seenAt) entry.seenAt = seenAt;
   if (column) entry.column = column;
+  if (customTitle) entry.customTitle = customTitle;
   if (updatedAt) entry.updatedAt = updatedAt;
   return entry;
 }
@@ -152,6 +154,12 @@ export function applyBoardAction(payload, configPath = getDefaultBoardConfigPath
       seenAt: pickLaterIso(prev.seenAt, targetAt),
       updatedAt: now,
     };
+  } else if (action === 'rename') {
+    const title = typeof payload.title === 'string' ? payload.title.trim() : '';
+    const next = { ...prev, updatedAt: now };
+    if (title) next.customTitle = title;
+    else delete next.customTitle;
+    cards[id] = next;
   } else {
     // 'move' or legacy { id, column }
     const col = String(payload.column || '').trim();

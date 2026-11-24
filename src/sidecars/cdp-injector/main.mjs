@@ -7,6 +7,7 @@ import {
   getGeminiQuotaSummary,
   getLatestMetrics,
   getWorkspaceBoardData,
+  renameConversation,
 } from '../../shared/ls-client.mjs';
 import { startCdpInjector } from '../../statusline/injector.mjs';
 
@@ -51,7 +52,12 @@ const stopInjector = startCdpInjector({
   getMetrics: (cid) => getLatestMetrics(cid, { includeSubagents: false, fallbackToLatest: false }),
   getQuota: getGeminiQuotaSummary,
   getBoard: () => getWorkspaceBoardData(120),
-  onSetBoardStatus: (payload) => applyBoardAction(payload),
+  onSetBoardStatus: async (payload) => {
+    applyBoardAction(payload);
+    if (payload?.action === 'rename' && payload.id && payload.title) {
+      await renameConversation(payload.id, payload.title);
+    }
+  },
 });
 
 function shutdown() {

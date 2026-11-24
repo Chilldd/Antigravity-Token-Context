@@ -1,5 +1,5 @@
 (() => {
-  const SCRIPT_VERSION = '30';
+  const SCRIPT_VERSION = '33';
   if (window.__agyCtxBarVersion === SCRIPT_VERSION) return 'already-bootstrapped';
   window.__agyCtxBarVersion = SCRIPT_VERSION;
   window.__agyCtxBarBootstrapped = true;
@@ -1387,6 +1387,7 @@
   const WS_VIEW_ID = 'agy-ws-view';
   const WS_STYLE_ID = 'agy-ws-style';
   const WS_LANES = [
+    { key: 'starred', label: '关注', emptyText: '点击卡片星标即可集中关注' },
     { key: 'attention', label: '需处理', emptyText: '暂无待确认或异常的会话' },
     { key: 'running', label: '进行中', emptyText: '当前没有运行中的会话' },
     { key: 'done', label: '已完成', emptyText: '暂无已完成的会话' },
@@ -1397,6 +1398,8 @@
   let wsScope = 'workspace'; // 'workspace' | 'all'
   let wsBoardData = null;
   let wsLastRenderKey = '';
+  let wsLastProjectsKey = '';
+  let wsEditingCid = '';
   const wsExpandedGroups = new Set(); // 'week' | 'older' | 'archived'
 
   function ensureWsStyle() {
@@ -1643,14 +1646,79 @@
         background: var(--ws-border-strong);
         border-radius: 999px;
       }
+      #${WS_VIEW_ID} .ws-projects-bar {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        padding: 8px 20px;
+        background: var(--ws-surface);
+        border-bottom: 1px solid var(--ws-border);
+        flex-shrink: 0;
+      }
+      #${WS_VIEW_ID} .ws-projects-bar[hidden] {
+        display: none;
+      }
+      #${WS_VIEW_ID} .ws-projects-label {
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--ws-muted);
+        margin-right: 2px;
+        flex-shrink: 0;
+      }
+      #${WS_VIEW_ID} .ws-project-chip {
+        appearance: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 24px;
+        max-width: 190px;
+        padding: 0 8px;
+        border-radius: 6px;
+        border: 1px solid var(--ws-border);
+        background: var(--ws-surface-alt);
+        color: var(--ws-secondary);
+        font-size: 11.5px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+      }
+      #${WS_VIEW_ID} .ws-project-chip:hover {
+        border-color: var(--ws-cobalt);
+        background: var(--ws-cobalt-bg);
+        color: var(--ws-ink);
+      }
+      #${WS_VIEW_ID} .ws-project-chip.is-active {
+        border-color: color-mix(in srgb, var(--ws-cobalt) 45%, transparent);
+        background: var(--ws-cobalt-bg);
+        color: var(--ws-cobalt);
+      }
+      #${WS_VIEW_ID} .ws-project-chip-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #${WS_VIEW_ID} .ws-project-chip-plus {
+        opacity: 0.65;
+        flex-shrink: 0;
+      }
+      #${WS_VIEW_ID} .ws-project-chip:hover .ws-project-chip-plus {
+        opacity: 1;
+        color: var(--ws-cobalt);
+      }
       #${WS_VIEW_ID} .ws-board {
         display: grid;
-        grid-template-columns: repeat(3, minmax(260px, 1fr));
-        gap: 12px;
+        grid-template-columns: repeat(4, minmax(225px, 1fr));
+        gap: 10px;
         min-height: 100%;
         align-items: start;
       }
-      @media (max-width: 900px) {
+      @media (max-width: 1080px) {
+        #${WS_VIEW_ID} .ws-board {
+          grid-template-columns: repeat(2, minmax(240px, 1fr));
+        }
+      }
+      @media (max-width: 680px) {
         #${WS_VIEW_ID} .ws-board {
           grid-template-columns: 1fr;
           min-height: auto;
@@ -1713,6 +1781,10 @@
         width: 7px;
         height: 7px;
         border-radius: 999px;
+        flex-shrink: 0;
+      }
+      #${WS_VIEW_ID} .ws-star-head {
+        color: var(--ws-amber);
         flex-shrink: 0;
       }
       #${WS_VIEW_ID} .ws-dot-attention { background: var(--ws-amber); }
@@ -1799,30 +1871,6 @@
       #${WS_VIEW_ID} .ws-card.is-current {
         border-color: var(--ws-cobalt);
       }
-      #${WS_VIEW_ID} .ws-card.is-dragging {
-        opacity: 0.35;
-      }
-      .ws-drag-ghost {
-        position: fixed;
-        z-index: 2147483647;
-        pointer-events: none;
-        margin: 0;
-        opacity: 0.94;
-        transform: rotate(1deg) scale(1.01);
-        box-shadow: 0 10px 26px rgba(0, 0, 0, 0.22);
-        border-radius: 10px;
-        padding: 11px 12px;
-        background: var(--ws-surface, #ffffff);
-        border: 1px solid var(--ws-cobalt, #3b6ce7);
-        color: var(--ws-ink, #111827);
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif;
-        font-size: 12.5px;
-        box-sizing: border-box;
-      }
-      #${WS_VIEW_ID} .ws-col.ws-col-over {
-        border-color: var(--ws-cobalt);
-        background: var(--ws-cobalt-bg);
-      }
       #${WS_VIEW_ID} .ws-card-top {
         display: flex;
         align-items: flex-start;
@@ -1851,6 +1899,20 @@
         -webkit-box-orient: vertical;
         overflow: hidden;
         word-break: break-word;
+      }
+      #${WS_VIEW_ID} .ws-rename-input {
+        width: 100%;
+        height: 24px;
+        padding: 0 6px;
+        border-radius: 6px;
+        border: 1px solid var(--ws-cobalt);
+        background: var(--ws-canvas);
+        color: var(--ws-ink);
+        font-family: inherit;
+        font-size: 12.5px;
+        font-weight: 500;
+        outline: none;
+        box-sizing: border-box;
       }
       #${WS_VIEW_ID} .ws-card-right {
         display: inline-flex;
@@ -1893,12 +1955,6 @@
       }
       #${WS_VIEW_ID} .ws-op-btn.is-starred {
         color: var(--ws-amber);
-      }
-      #${WS_VIEW_ID} .ws-op-text-btn {
-        width: auto;
-        padding: 0 5px;
-        font-size: 10px;
-        font-weight: 500;
       }
       #${WS_VIEW_ID} .ws-state-pill {
         display: inline-flex;
@@ -1951,10 +2007,6 @@
         border-radius: 999px;
         background: var(--ws-cobalt-bg);
         color: var(--ws-cobalt);
-      }
-      #${WS_VIEW_ID} .ws-manual-tag {
-        color: var(--ws-cobalt);
-        background: var(--ws-cobalt-bg);
       }
       #${WS_VIEW_ID} .ws-card-meta {
         display: flex;
@@ -2119,7 +2171,128 @@
     if (newBtn) newBtn.click();
   }
 
+  function collectSidebarProjects() {
+    const view = document.getElementById(WS_VIEW_ID);
+    const seen = new Map(); // projectId -> { id, name, href, aria }
+    const anchors = Array.from(document.querySelectorAll('a[href]'));
+    for (const a of anchors) {
+      if (view && view.contains(a)) continue;
+      const href = a.getAttribute('href') || '';
+      if (!href.startsWith('/?project=')) continue;
+      let projectId = '';
+      try {
+        projectId = new URL(href, location.origin).searchParams.get('project') || '';
+      } catch {
+        continue;
+      }
+      if (!projectId) continue;
+
+      const aria = a.getAttribute('aria-label') || '';
+      const isNewChatLink = !/^Project:/i.test(aria);
+      let name = '';
+      const p2 = a.parentElement?.parentElement;
+      if (p2) {
+        const lines = (p2.innerText || '')
+          .split(/\r?\n/)
+          .map((s) => s.trim())
+          .filter((s) => s && s !== '/');
+        if (lines.length > 0) name = lines[0];
+      }
+      if (!name && /^Project:\s*/i.test(aria)) {
+        name = aria.replace(/^Project:\s*/i, '').trim();
+      }
+      if (!name) name = projectId;
+
+      const existing = seen.get(projectId);
+      if (!existing) {
+        seen.set(projectId, { id: projectId, name, href, isNewChatLink });
+      } else {
+        if (isNewChatLink && !existing.isNewChatLink) {
+          existing.href = href;
+          existing.isNewChatLink = true;
+        }
+        if (existing.name === projectId && name !== projectId) {
+          existing.name = name;
+        }
+      }
+    }
+    return Array.from(seen.values());
+  }
+
+  function triggerNewConversationInProject(projectId, href) {
+    setWorkspaceOpen(false);
+    const view = document.getElementById(WS_VIEW_ID);
+    const anchors = Array.from(document.querySelectorAll('a[href]')).filter((a) => {
+      if (view && view.contains(a)) return false;
+      const h = a.getAttribute('href') || '';
+      if (!h.startsWith('/?project=')) return false;
+      try {
+        return new URL(h, location.origin).searchParams.get('project') === projectId;
+      } catch {
+        return false;
+      }
+    });
+    const preferred = anchors.find((a) => !/^Project:/i.test(a.getAttribute('aria-label') || '')) || anchors[0];
+    if (preferred) {
+      preferred.click();
+      return;
+    }
+    const targetHref = href || `/?project=${encodeURIComponent(projectId)}`;
+    try {
+      history.pushState({}, '', targetHref);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    } catch {
+      location.href = targetHref;
+    }
+  }
+
+  function renderWorkspaceProjectsBar(view) {
+    const bar = view?.querySelector('[data-role="ws-projects"]');
+    if (!bar) return;
+    const projects = collectSidebarProjects();
+    let currentProjectId = '';
+    try {
+      currentProjectId = new URL(location.href).searchParams.get('project') || '';
+    } catch {}
+    const key = JSON.stringify([currentProjectId, projects.map((p) => `${p.id}:${p.name}`)]);
+    if (key === wsLastProjectsKey) return;
+    wsLastProjectsKey = key;
+
+    if (!projects.length) {
+      bar.hidden = true;
+      bar.innerHTML = '';
+      return;
+    }
+
+    bar.hidden = false;
+    bar.innerHTML = `
+      <span class="ws-projects-label">快速新建</span>
+      ${projects.map((p) => `
+        <button type="button" class="ws-project-chip ${p.id === currentProjectId ? 'is-active' : ''}" data-project-id="${escapeHtml(p.id)}" data-project-href="${escapeHtml(p.href)}" title="基于 ${escapeHtml(p.name)} 创建新会话">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;" aria-hidden="true">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+          </svg>
+          <span class="ws-project-chip-name">${escapeHtml(p.name)}</span>
+          <svg class="ws-project-chip-plus" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        </button>
+      `).join('')}
+    `;
+
+    bar.querySelectorAll('.ws-project-chip').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const pid = btn.dataset.projectId || '';
+        const href = btn.dataset.projectHref || '';
+        if (pid) triggerNewConversationInProject(pid, href);
+      });
+    });
+  }
+
   function buildWsShell(view) {
+    wsLastProjectsKey = '';
     view.innerHTML = `
       <div class="ws-topbar">
         <div class="ws-topbar-left">
@@ -2156,6 +2329,7 @@
           <button class="ws-btn" data-action="close" type="button">返回对话</button>
         </div>
       </div>
+      <div class="ws-projects-bar" data-role="ws-projects" hidden></div>
       <div class="ws-board-scroll">
         <div class="ws-board" data-role="ws-board"></div>
       </div>
@@ -2266,19 +2440,10 @@
       const patch = { isUnread: false, seenAt: nowIso };
       if (target) Object.assign(target, patch);
       setPendingPatch(cid, patch);
-    } else if (action === 'move' || payload.column !== undefined) {
-      const col = payload.column || '';
-      if (col === 'auto') {
-        const autoStatus = target && /WAITING|CONFIRM|PENDING|NEEDS_INPUT|USER_INPUT/i.test(target.status || '')
-          ? 'waiting'
-          : (target && /RUNNING|QUEUED|EXECUTING|GENERATING|IN_PROGRESS/i.test(target.status || '')
-              ? 'running'
-              : 'idle');
-        const patch = { isManual: false, boardStatus: autoStatus };
-        if (target) Object.assign(target, patch);
-        setPendingPatch(cid, patch);
-      } else {
-        const patch = { isManual: true, boardStatus: col };
+    } else if (action === 'rename') {
+      const nextTitle = typeof payload.title === 'string' ? payload.title.trim() : '';
+      if (nextTitle) {
+        const patch = { summary: nextTitle };
         if (target) Object.assign(target, patch);
         setPendingPatch(cid, patch);
       }
@@ -2322,7 +2487,7 @@
       currentCid,
       Array.from(wsExpandedGroups).sort(),
       filtered.map((i) =>
-        `${i.id}:${i.boardStatus}:${i.isManual ? 1 : 0}:${i.starred ? 1 : 0}:${i.archived ? 1 : 0}:${i.isUnread ? 1 : 0}:${i.stepCount}:${i.subagentCount}:${i.lastModifiedTime}`,
+        `${i.id}:${i.summary}:${i.boardStatus}:${i.starred ? 1 : 0}:${i.archived ? 1 : 0}:${i.isUnread ? 1 : 0}:${i.stepCount}:${i.subagentCount}:${i.lastModifiedTime}`,
       ),
     ]);
   }
@@ -2367,21 +2532,15 @@
     badge.classList.add('is-visible', attentionCount > 0 ? 'is-warn' : 'is-unread');
   }
 
-  function moveBoardCard(cid, column) {
-    if (!cid) return;
-    performBoardAction({ action: 'move', id: cid, column });
-  }
-
-  let wsDraggingCid = '';
-
   function renderWorkspaceBoard() {
     const view = document.getElementById(WS_VIEW_ID);
-    if (!view || !wsOpen) return;
+    if (!view || !wsOpen || wsEditingCid) return;
     view.classList.toggle('agy-light', isLightSurface());
 
     if (!view.querySelector('[data-role="ws-board"]')) {
       buildWsShell(view);
     }
+    renderWorkspaceProjectsBar(view);
 
     const currentCid = getCurrentCid();
     const q = wsQuery.trim().toLowerCase();
@@ -2391,12 +2550,15 @@
     if (renderKey === wsLastRenderKey) return;
     wsLastRenderKey = renderKey;
 
+    const starredItems = [];
     const attentionItems = [];
     const runningItems = [];
     const doneItems = [];
 
     for (const item of filtered) {
-      if (item.boardStatus === 'waiting' || item.boardStatus === 'error') {
+      if (item.starred && !item.archived) {
+        starredItems.push(item);
+      } else if (item.boardStatus === 'waiting' || item.boardStatus === 'error') {
         attentionItems.push(item);
       } else if (item.boardStatus === 'running') {
         runningItems.push(item);
@@ -2405,6 +2567,18 @@
       }
     }
 
+    const sortedStarred = starredItems.slice().sort((a, b) => {
+      const rank = (x) => {
+        if (x.boardStatus === 'waiting' || x.boardStatus === 'error') return 0;
+        if (x.boardStatus === 'running') return 1;
+        if (x.boardStatus === 'idle' && x.isUnread && x.id !== currentCid) return 2;
+        return 3;
+      };
+      const ra = rank(a);
+      const rb = rank(b);
+      if (ra !== rb) return ra - rb;
+      return (b.lastModifiedTime || '').localeCompare(a.lastModifiedTime || '');
+    });
     const sortedAttention = sortBoardCards(attentionItems);
     const sortedRunning = sortBoardCards(runningItems);
 
@@ -2451,9 +2625,10 @@
     if (totalEl) {
       const activeDoneCount = doneItems.length - doneGroups.archived.length;
       const parts = [];
+      if (sortedStarred.length > 0) parts.push(`关注 ${sortedStarred.length}`);
       if (sortedAttention.length > 0) parts.push(`需处理 ${sortedAttention.length}`);
       if (sortedRunning.length > 0) parts.push(`进行中 ${sortedRunning.length}`);
-      parts.push(`共 ${sortedAttention.length + sortedRunning.length + activeDoneCount}`);
+      parts.push(`共 ${sortedStarred.length + sortedAttention.length + sortedRunning.length + activeDoneCount}`);
       totalEl.textContent = parts.join(' · ');
     }
 
@@ -2462,7 +2637,8 @@
 
     function renderCardHtml(item, laneKey) {
       const isCurrent = currentCid && item.id === currentCid;
-      const isUnread = laneKey === 'done' && !item.archived && item.isUnread && !isCurrent;
+      const isIdle = item.boardStatus === 'idle';
+      const isUnread = isIdle && !item.archived && item.isUnread && !isCurrent;
       const timeLabel = formatRelativeTime(item.lastModifiedTime);
 
       let cardToneClass = 'is-done';
@@ -2501,9 +2677,6 @@
       if (item.stepCount > 0 && tagParts.length < 2) {
         tagParts.push(`<span class="ws-tag num">${item.stepCount} 步</span>`);
       }
-      if (item.isManual) {
-        tagParts.push('<span class="ws-tag ws-manual-tag">手动</span>');
-      }
 
       const starBtnHtml = `
         <button type="button" class="ws-op-btn ${item.starred ? 'is-starred is-always' : ''}" data-op="star" data-cid="${escapeHtml(item.id)}" data-next="${item.starred ? '0' : '1'}" aria-label="${item.starred ? '取消关注' : '关注此会话'}" title="${item.starred ? '取消关注' : '关注置顶'}">
@@ -2514,7 +2687,7 @@
       `;
 
       let doneOpsHtml = '';
-      if (laneKey === 'done') {
+      if (laneKey === 'done' || (laneKey === 'starred' && isIdle)) {
         if (isUnread) {
           doneOpsHtml += `
             <button type="button" class="ws-op-btn" data-op="seen" data-cid="${escapeHtml(item.id)}" aria-label="标为已读" title="标为已读">
@@ -2545,9 +2718,14 @@
         }
       }
 
-      const autoBtnHtml = item.isManual
-        ? `<button type="button" class="ws-op-btn ws-op-text-btn" data-op="auto" data-cid="${escapeHtml(item.id)}" aria-label="恢复自动分类" title="恢复自动分类">自动</button>`
-        : '';
+      const renameBtnHtml = `
+        <button type="button" class="ws-op-btn" data-op="rename" data-cid="${escapeHtml(item.id)}" aria-label="重命名会话" title="重命名会话">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 20h9"></path>
+            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+          </svg>
+        </button>
+      `;
 
       return `
         <div class="ws-card ${cardToneClass} ${isCurrent ? 'is-current' : ''}" role="button" tabindex="0" data-cid="${escapeHtml(item.id)}" data-col="${escapeHtml(laneKey)}" title="${escapeHtml(item.summary)}">
@@ -2557,7 +2735,7 @@
             </div>
             <div class="ws-card-right">
               <div class="ws-card-ops">
-                ${autoBtnHtml}
+                ${renameBtnHtml}
                 ${doneOpsHtml}
                 ${starBtnHtml}
               </div>
@@ -2618,9 +2796,19 @@
     const hasError = sortedAttention.some((i) => i.boardStatus === 'error');
     const attentionDotClass = hasError && !hasWaiting ? 'ws-dot ws-dot-attention is-error-only' : 'ws-dot ws-dot-attention';
 
+    const starHeadIconHtml = '<svg class="ws-star-head" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>';
+
     const laneHtmlMap = {
+      starred: {
+        iconHtml: starHeadIconHtml,
+        count: sortedStarred.length,
+        headAction: '',
+        bodyHtml: sortedStarred.length
+          ? sortedStarred.map((item) => renderCardHtml(item, 'starred')).join('')
+          : `<div class="ws-empty">${q ? '无匹配当前筛选条件的会话' : '点击卡片星标即可集中关注'}</div>`,
+      },
       attention: {
-        dotClass: attentionDotClass,
+        iconHtml: `<span class="${attentionDotClass}" aria-hidden="true"></span>`,
         count: sortedAttention.length,
         headAction: '',
         bodyHtml: sortedAttention.length
@@ -2628,7 +2816,7 @@
           : `<div class="ws-empty">${q ? '无匹配当前筛选条件的会话' : '暂无待确认或异常的会话'}</div>`,
       },
       running: {
-        dotClass: 'ws-dot ws-dot-running',
+        iconHtml: '<span class="ws-dot ws-dot-running" aria-hidden="true"></span>',
         count: sortedRunning.length,
         headAction: '',
         bodyHtml: sortedRunning.length
@@ -2636,7 +2824,7 @@
           : `<div class="ws-empty">${q ? '无匹配当前筛选条件的会话' : '当前没有运行中的会话'}</div>`,
       },
       done: {
-        dotClass: 'ws-dot ws-dot-done',
+        iconHtml: '<span class="ws-dot ws-dot-done" aria-hidden="true"></span>',
         count: doneItems.length - doneGroups.archived.length,
         headAction: batchArchivableIds.length > 0 && !q
           ? '<button type="button" class="ws-col-action" data-action="archive-read">归档已读</button>'
@@ -2651,7 +2839,7 @@
         <section class="ws-col" data-col="${lane.key}" aria-label="${lane.label}">
           <header class="ws-col-head">
             <span class="ws-col-title">
-              <span class="${cfg.dotClass}" aria-hidden="true"></span>
+              ${cfg.iconHtml}
               <span>${lane.label}</span>
             </span>
             <span class="ws-col-head-right">
@@ -2683,6 +2871,54 @@
       });
     });
 
+    function startInlineRename(card, cid) {
+      const titleEl = card?.querySelector('.ws-card-title');
+      if (!titleEl) return;
+      const original = (card.getAttribute('title') || titleEl.textContent || '').trim();
+      wsEditingCid = cid;
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'ws-rename-input';
+      input.value = original;
+      input.setAttribute('aria-label', '编辑会话名称');
+      titleEl.innerHTML = '';
+      titleEl.appendChild(input);
+
+      let finished = false;
+      function cleanup(save) {
+        if (finished) return;
+        finished = true;
+        const nextTitle = input.value.trim();
+        wsEditingCid = '';
+        if (save && nextTitle && nextTitle !== original) {
+          performBoardAction({ action: 'rename', id: cid, title: nextTitle });
+        } else {
+          titleEl.textContent = original;
+          wsLastRenderKey = '';
+          renderWorkspaceBoard();
+        }
+      }
+
+      input.addEventListener('pointerdown', (e) => e.stopPropagation());
+      input.addEventListener('mousedown', (e) => e.stopPropagation());
+      input.addEventListener('click', (e) => e.stopPropagation());
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          e.stopPropagation();
+          cleanup(true);
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          cleanup(false);
+        }
+      });
+      input.addEventListener('blur', () => cleanup(true));
+
+      input.focus();
+      input.select();
+    }
+
     boardEl.querySelectorAll('.ws-op-btn').forEach((btn) => {
       btn.addEventListener('pointerdown', (e) => e.stopPropagation());
       btn.addEventListener('click', (e) => {
@@ -2690,7 +2926,10 @@
         const cid = btn.dataset.cid || '';
         const op = btn.dataset.op || '';
         if (!cid || !op) return;
-        if (op === 'star') {
+        if (op === 'rename') {
+          const card = btn.closest('.ws-card');
+          if (card) startInlineRename(card, cid);
+        } else if (op === 'star') {
           performBoardAction({ action: 'star', id: cid, value: btn.dataset.next === '1' });
         } else if (op === 'archive') {
           performBoardAction({ action: 'archive', id: cid, value: true });
@@ -2698,114 +2937,20 @@
           performBoardAction({ action: 'archive', id: cid, value: false });
         } else if (op === 'seen') {
           performBoardAction({ action: 'seen', id: cid });
-        } else if (op === 'auto') {
-          performBoardAction({ action: 'move', id: cid, column: 'auto' });
         }
       });
     });
 
-    let suppressClickUntil = 0;
-
     boardEl.querySelectorAll('.ws-card').forEach((card) => {
-      card.addEventListener('pointerdown', (e) => {
-        if (e.button !== 0) return;
-        if (e.target instanceof Element && e.target.closest('.ws-op-btn')) return;
-
-        const cid = card.dataset.cid || '';
-        const sourceCol = card.dataset.col || '';
-        if (!cid) return;
-
-        const rect = card.getBoundingClientRect();
-        const startX = e.clientX;
-        const startY = e.clientY;
-        const offsetX = e.clientX - rect.left;
-        const offsetY = e.clientY - rect.top;
-        let dragging = false;
-        let ghost = null;
-        let activeColEl = null;
-
-        function clearOver() {
-          if (activeColEl) {
-            activeColEl.classList.remove('ws-col-over');
-            activeColEl = null;
-          }
-        }
-
-        function onMove(ev) {
-          const dx = ev.clientX - startX;
-          const dy = ev.clientY - startY;
-          if (!dragging) {
-            if (Math.hypot(dx, dy) < 6) return;
-            dragging = true;
-            wsDraggingCid = cid;
-            card.classList.add('is-dragging');
-            ghost = document.createElement('div');
-            ghost.className = 'ws-drag-ghost';
-            ghost.style.width = `${rect.width}px`;
-            ghost.style.background = getComputedStyle(card).backgroundColor;
-            ghost.style.color = getComputedStyle(card).color;
-            ghost.style.borderColor = getComputedStyle(view).getPropertyValue('--ws-cobalt') || '#3b6ce7';
-            ghost.innerHTML = `<div style="font-weight:500;line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${escapeHtml(card.title || '')}</div>`;
-            document.body.appendChild(ghost);
-          }
-          if (ghost) {
-            ghost.style.left = `${ev.clientX - offsetX}px`;
-            ghost.style.top = `${ev.clientY - offsetY}px`;
-          }
-          const hit = document.elementsFromPoint(ev.clientX, ev.clientY).find((el) => el.classList?.contains('ws-col'));
-          if (hit !== activeColEl) {
-            clearOver();
-            if (hit) {
-              activeColEl = hit;
-              activeColEl.classList.add('ws-col-over');
-            }
-          }
-        }
-
-        function finish(ev, commit) {
-          window.removeEventListener('pointermove', onMove, true);
-          window.removeEventListener('pointerup', onUp, true);
-          window.removeEventListener('pointercancel', onCancel, true);
-          card.classList.remove('is-dragging');
-          if (ghost) {
-            ghost.remove();
-            ghost = null;
-          }
-          const targetCol = commit && activeColEl ? activeColEl.dataset.col || '' : '';
-          clearOver();
-          wsDraggingCid = '';
-          if (dragging) {
-            suppressClickUntil = Date.now() + 260;
-            if (commit && targetCol && targetCol !== sourceCol) {
-              const colToStatus = { attention: 'waiting', running: 'running', done: 'idle' };
-              const nextStatus = colToStatus[targetCol];
-              if (nextStatus) moveBoardCard(cid, nextStatus);
-            }
-          }
-        }
-
-        function onUp(ev) { finish(ev, true); }
-        function onCancel(ev) { finish(ev, false); }
-
-        window.addEventListener('pointermove', onMove, true);
-        window.addEventListener('pointerup', onUp, true);
-        window.addEventListener('pointercancel', onCancel, true);
-      });
-
       card.addEventListener('click', (e) => {
-        if (Date.now() < suppressClickUntil) {
-          e.preventDefault();
-          e.stopPropagation();
-          return;
-        }
-        if (e.target instanceof Element && e.target.closest('.ws-op-btn')) return;
+        if (e.target instanceof Element && e.target.closest('.ws-op-btn, .ws-rename-input')) return;
         const cid = card.dataset.cid || '';
         if (cid) navigateToConversation(cid);
       });
 
       card.addEventListener('keydown', (e) => {
         if (e.key !== 'Enter' && e.key !== ' ') return;
-        if (e.target instanceof Element && e.target.closest('.ws-op-btn')) return;
+        if (e.target instanceof Element && e.target.closest('.ws-op-btn, .ws-rename-input')) return;
         e.preventDefault();
         const cid = card.dataset.cid || '';
         if (cid) navigateToConversation(cid);
@@ -2896,7 +3041,7 @@
   }
 
   function onWorkspaceKeydown(e) {
-    if (e.key === 'Escape' && wsOpen) {
+    if (e.key === 'Escape' && wsOpen && !wsEditingCid) {
       setWorkspaceOpen(false);
     }
   }

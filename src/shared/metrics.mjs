@@ -334,6 +334,55 @@ function computeContextBreakdown(steps, contextUsed, contextMax, tokenBreakdown 
 }
 
 /**
+ * Detect whether a trajectory runs in Orchestrator (Plan + Execute) mode
+ * and resolve configured plan/execution model identities.
+ */
+function detectOrchestratorInfo(trajectory, catalog = {}, turns = []) {
+  const genMeta = Array.isArray(trajectory?.generatorMetadata) ? trajectory.generatorMetadata : [];
+  const steps = Array.isArray(trajectory?.steps) ? trajectory.steps : [];
+
+  let pc = null;
+  for (let i = genMeta.length - 1; i >= 0; i--) {
+    if (genMeta[i]?.plannerConfig) {
+      pc = genMeta[i].plannerConfig;
+      break;
+    }
+  }
+
+  const hasPlanExecuteConfig = Boolean(pc?.planExecuteConfig);
+  const hasPlanProtocol = Boolean(
+    pc?.declarativeMixinConfig?.promptSections?.some((s) => s?.builtinName === 'plan_execute_protocol'),
+  );
+  const hasPlanGate = Boolean(
+    pc?.declarativeMixinConfig?.preToolHooks?.some((h) => h?.name === 'plan_mode_gate'),
+  );
+  const hasPlanToolCall = steps.some((s) => {
+    const name = String(s?.metadata?.toolCall?.name || '');
+    return name === 'exit_plan_mode' || name === 'enter_plan_mode';
+  });
+
+  const enabled = hasPlanExecuteConfig || hasPlanProtocol || hasPlanGate || hasPlanToolCall;
+  const resolveDisplayName = (id) => {
+    if (!id) return '';
+    if (catalog[id]?.displayName) return catalog[id].displayName;
+    const matchedTurn = turns.find((t) => t.modelId === id && t.modelName && t.modelName !== id);
+    return matchedTurn?.modelName || id;
+  };
+  const executionModelId = pc?.planExecuteConfig?.executionModel || '';
+  const executionModelName = resolveDisplayName(executionModelId);
+  const planModelId = pc?.planModel || pc?.modelName || '';
+  const planModelName = resolveDisplayName(planModelId);
+
+  return {
+    enabled,
+    planModelId,
+    planModelName,
+    executionModelId,
+    executionModelName,
+  };
+}
+
+/**
  * Compute context window, token usage, cache hit rate, and generation speed metrics
  * from a GetCascadeTrajectory response and an optional model catalog.
  */
@@ -453,6 +502,8 @@ export function computeTrajectoryMetrics(trajectoryResp, catalog = {}) {
   let totalCacheSavedCost = 0;
   let pricedTurnCount = 0;
   const pricingConfig = getPricingConfig();
+  const orchestrator = detectOrchestratorInfo(trajectory, catalog, turns);
+  const byModel = new Map();
 
   for (const t of turns) {
     totalUncachedInput += t.inputTokens;
@@ -462,12 +513,13 @@ export function computeTrajectoryMetrics(trajectoryResp, catalog = {}) {
     totalThinking += t.thinkingOutputTokens;
     totalResponse += t.responseOutputTokens;
 
+    const effectiveOut = getEffectiveOutputTokens(t);
     const turnCost = calculateTokenCost(
       {
         inputTokens: t.inputTokens,
         cacheReadTokens: t.cacheReadTokens,
         cacheCreationTokens: t.cacheCreationTokens,
-        outputTokens: getEffectiveOutputTokens(t),
+        outputTokens: effectiveOut,
       },
       t.modelName,
       t.modelId,
@@ -481,6 +533,50 @@ export function computeTrajectoryMetrics(trajectoryResp, catalog = {}) {
       totalCacheReadCost += turnCost.cacheRead;
       totalOutputCost += turnCost.output;
       totalCacheSavedCost += turnCost.savedByCache;
+    }
+
+    const mName = t.modelName || 'Unknown';
+    let mEntry = byModel.get(mName);
+    if (!mEntry) {
+      let role = '';
+      if (orchestrator.enabled) {
+        if (
+          (orchestrator.executionModelId && t.modelId === orchestrator.executionModelId) ||
+          (orchestrator.executionModelName && mName === orchestrator.executionModelName)
+        ) {
+          role = 'execute';
+        } else if (
+          (orchestrator.planModelId && t.modelId === orchestrator.planModelId) ||
+          (orchestrator.planModelName && mName === orchestrator.planModelName)
+        ) {
+          role = 'plan';
+        }
+      }
+      mEntry = {
+        modelName: mName,
+        modelId: t.modelId || '',
+        role,
+        turns: 0,
+        input: 0,
+        uncachedInput: 0,
+        cacheRead: 0,
+        output: 0,
+        tokens: 0,
+        cost: 0,
+        priced: false,
+        pricing: resolveModelPricing(mName, t.modelId, pricingConfig),
+      };
+      byModel.set(mName, mEntry);
+    }
+    mEntry.turns += 1;
+    mEntry.input += t.promptTotal;
+    mEntry.uncachedInput += t.inputTokens;
+    mEntry.cacheRead += t.cacheReadTokens;
+    mEntry.output += effectiveOut;
+    mEntry.tokens += t.promptTotal + effectiveOut;
+    if (turnCost.priced) {
+      mEntry.priced = true;
+      mEntry.cost += turnCost.total;
     }
 
     const speedInfo = computeTurnSpeed(getEffectiveOutputTokens(t), t.ttftSec, t.streamingSec);
@@ -507,6 +603,15 @@ export function computeTrajectoryMetrics(trajectoryResp, catalog = {}) {
   const contextPct = contextMax > 0 ? Math.min(100, (contextUsed / contextMax) * 100) : 0;
   const contextFree = contextMax > 0 ? Math.max(0, contextMax - contextUsed) : 0;
 
+  const totalAllTokens = totalInputAll + totalOutput;
+  const modelBreakdown = Array.from(byModel.values())
+    .map((m) => ({
+      ...m,
+      pct: totalAllTokens > 0 ? (m.tokens / totalAllTokens) * 100 : 0,
+      costPct: totalCost > 0 ? (m.cost / totalCost) * 100 : 0,
+    }))
+    .sort((a, b) => b.tokens - a.tokens);
+
   const allTurnsDesc = turns.slice().reverse();
   const breakdown = computeContextBreakdown(steps, contextUsed, contextMax, latest?.tokenBreakdown || null);
   const toolTreemap = computeToolBreakdown(steps, latest?.tokenBreakdown || null);
@@ -518,6 +623,8 @@ export function computeTrajectoryMetrics(trajectoryResp, catalog = {}) {
     turnCount: turns.length,
     modelName: latest?.modelName || 'Unknown',
     modelId: latest?.modelId || '',
+    orchestrator,
+    modelBreakdown,
     context: {
       used: contextUsed,
       estimatedUsed: latest?.estimatedTokensUsed || 0,

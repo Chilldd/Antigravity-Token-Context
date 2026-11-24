@@ -47,14 +47,14 @@ export function startCdpInjector({ getMetrics, getQuota, getBoard, onSetBoardSta
           if (onSetBoardStatus) {
             await session.call('Runtime.enable').catch(() => {});
             await session.call('Runtime.addBinding', { name: '__agyCtxSetBoardStatus' }).catch(() => {});
-            session.onEvent((msg) => {
+            session.onEvent(async (msg) => {
               if (msg.method !== 'Runtime.bindingCalled') return;
               if (msg.params?.name !== '__agyCtxSetBoardStatus') return;
               try {
                 const payload = JSON.parse(String(msg.params?.payload || '{}'));
                 if (payload && (payload.id || Array.isArray(payload.ids))) {
-                  onSetBoardStatus(payload);
-                  pushMetrics();
+                  await Promise.resolve(onSetBoardStatus(payload));
+                  await pushMetrics();
                 }
               } catch {
                 // ignore malformed binding payload

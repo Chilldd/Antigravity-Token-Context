@@ -695,6 +695,57 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  .session-head-left {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    max-width: 68%;
+    flex: 0 1 auto;
+  }
+  .session-head-left .model-badge {
+    max-width: 100%;
+  }
+  .mode-pill {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.3;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: var(--accent-bg);
+    color: var(--accent-fg);
+    border: 1px solid var(--accent-border);
+    white-space: nowrap;
+  }
+  .model-name-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    flex: 1;
+  }
+  .role-pill {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.25;
+    padding: 1px 5px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .role-pill.role-plan {
+    background: var(--accent-bg);
+    color: var(--accent-fg);
+  }
+  .role-pill.role-exec {
+    background: var(--ok-bg);
+    color: var(--ok-fg);
+  }
 
   .icon-btn {
     display: inline-flex;
@@ -1523,6 +1574,7 @@
   let swarmExpanded = false; // default collapsed
   let subagentsExpanded = false; // default collapsed
   let topConvsExpanded = false; // default collapsed
+  let sessionModelsExpanded = false; // default collapsed
   let catsExpanded = false; // default Top 4
   let lastAnimatedSessionId = '';
   let pendingExpandAnim = '';
@@ -1548,6 +1600,7 @@
       if (typeof saved.swarmExpanded === 'boolean') swarmExpanded = saved.swarmExpanded;
       if (typeof saved.subagentsExpanded === 'boolean') subagentsExpanded = saved.subagentsExpanded;
       if (typeof saved.topConvsExpanded === 'boolean') topConvsExpanded = saved.topConvsExpanded;
+      if (typeof saved.sessionModelsExpanded === 'boolean') sessionModelsExpanded = saved.sessionModelsExpanded;
       if (typeof saved.catsExpanded === 'boolean') catsExpanded = saved.catsExpanded;
     } catch {}
   }
@@ -1565,6 +1618,7 @@
         swarmExpanded,
         subagentsExpanded,
         topConvsExpanded,
+        sessionModelsExpanded,
         catsExpanded,
       }));
     } catch {}
@@ -3264,6 +3318,12 @@
     });
   }
 
+  function formatPricingTip(m) {
+    const p = m?.pricing;
+    if (!p) return '未匹配到公开参考单价';
+    return `参考单价（${p.label}，每 1M tokens）：输入 $${p.input} / 缓存读 $${p.cacheRead} / 输出 $${p.output}`;
+  }
+
   function renderSummary(summary) {
     disposeCharts();
     const hostCid = activeSidecarConversation();
@@ -3358,12 +3418,6 @@
         </div>
       </div>
     `;
-
-    const formatPricingTip = (m) => {
-      const p = m.pricing;
-      if (!p) return '未匹配到公开参考单价';
-      return `参考单价（${p.label}，每 1M tokens）：输入 $${p.input} / 缓存读 $${p.cacheRead} / 输出 $${p.output}`;
-    };
 
     const contentLayer = commitViewContent(`
       ${renderErrBanner()}
@@ -3765,13 +3819,73 @@
       ? `上下文窗口占用 ${fmtPct(ctxPct)}，已用 ${fmtTok(ctx.used)} / ${fmtTok(ctx.max)} tokens${catSummary ? '；主要构成：' + catSummary : ''}`
       : `上下文窗口已用 ${fmtTok(ctx.used)} tokens${catSummary ? '；主要构成：' + catSummary : ''}`;
 
+    const orch = data.orchestrator || {};
+    const orchEnabled = Boolean(orch.enabled);
+    const orchTipParts = [];
+    if (orch.planModelName) orchTipParts.push(`规划：${orch.planModelName}`);
+    if (orch.executionModelName) orchTipParts.push(`执行：${orch.executionModelName}`);
+    const orchTitle = orchTipParts.length
+      ? `Orchestrator 双模型协作模式（${orchTipParts.join(' · ')}）`
+      : 'Orchestrator 规划/执行双模型模式';
+    const modePillHtml = orchEnabled
+      ? `<span class="mode-pill" title="${esc(orchTitle)}">Orchestrator</span>`
+      : '';
+
+    const sessionModels = Array.isArray(data.modelBreakdown) ? data.modelBreakdown : [];
+    const showSessionModels = sessionModels.length > 0 && (orchEnabled || sessionModels.length > 1);
+    const sessionModelsHtml = showSessionModels ? `
+      <div class="sub-card">
+        <button id="btn-toggle-session-models" class="turns-toggle" type="button" aria-expanded="${sessionModelsExpanded}">
+          <span class="turns-toggle-left">
+            <svg class="chevron ${sessionModelsExpanded ? 'open' : ''}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M6 4l4 4-4 4"/>
+            </svg>
+            <span>${orchEnabled ? 'Orchestrator 模型用量' : '按模型使用量'}</span>
+          </span>
+          <span class="dim num" style="font-weight:400;font-size:11px;">${sessionModels.length} 个模型 · ${data.turnCount} 轮</span>
+        </button>
+        ${sessionModelsExpanded ? `
+          <div class="sub-list${pendingExpandAnim === 'sessionModels' ? ' anim-reveal' : ''}">
+            ${sessionModels.map((m) => {
+              const barPct = Math.min(100, Number(m.pct) || 0);
+              const roleBadge = m.role === 'plan'
+                ? '<span class="role-pill role-plan">规划</span>'
+                : (m.role === 'execute' ? '<span class="role-pill role-exec">执行</span>' : '');
+              const tip = m.pricing ? formatPricingTip(m) : '';
+              return `
+                <div class="model-row" ${tip ? `title="${esc(tip)}"` : ''}>
+                  <div class="model-bar-wrap">
+                    <div class="model-bar-top">
+                      <span class="model-name-group">
+                        <span class="model-bar-name">${esc(m.modelName)}</span>
+                        ${roleBadge}
+                      </span>
+                      <span class="num">${fmtTokHtml(m.tokens)} <span class="dim">(${fmtPct(m.pct)} · ${m.turns}轮)</span></span>
+                    </div>
+                    <div class="model-bar"><div style="width:${barPct.toFixed(1)}%"></div></div>
+                    <div class="model-bar-sub num">
+                      <span>入 ${fmtTok(m.input)}（缓存 ${fmtTok(m.cacheRead)}） / 出 ${fmtTok(m.output)}</span>
+                      <span>${m.priced ? fmtCost(m.cost) : '未配单价'}</span>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        ` : ''}
+      </div>
+    ` : '';
+
     const contentLayer = commitViewContent(`
       ${renderErrBanner()}
 
       <div class="session-head">
-        <div class="model-badge" title="状态：${esc(statusLabel)}">
-          <span class="dot ${isRunning ? 'running' : ''}"></span>
-          <span class="model-name">${esc(data.modelName)}</span>
+        <div class="session-head-left">
+          <div class="model-badge" title="状态：${esc(statusLabel)}">
+            <span class="dot ${isRunning ? 'running' : ''}"></span>
+            <span class="model-name">${esc(data.modelName)}</span>
+          </div>
+          ${modePillHtml}
         </div>
         ${topTitle ? `<div class="session-title" title="${esc(topTitle)}">${esc(topTitle)}</div>` : ''}
       </div>
@@ -3848,6 +3962,7 @@
         </div>
       </div>
 
+      ${sessionModelsHtml}
       ${renderToolTreemap(data.toolTreemap)}
       ${swarmHtml}
       ${subagentsHtml}
@@ -3960,6 +4075,12 @@
     contentLayer.querySelector('#btn-toggle-subagents')?.addEventListener('click', () => {
       subagentsExpanded = !subagentsExpanded;
       pendingExpandAnim = subagentsExpanded ? 'subagents' : '';
+      saveUiState();
+      render(lastData);
+    });
+    contentLayer.querySelector('#btn-toggle-session-models')?.addEventListener('click', () => {
+      sessionModelsExpanded = !sessionModelsExpanded;
+      pendingExpandAnim = sessionModelsExpanded ? 'sessionModels' : '';
       saveUiState();
       render(lastData);
     });

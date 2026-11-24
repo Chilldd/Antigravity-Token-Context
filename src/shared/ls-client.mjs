@@ -579,11 +579,9 @@ export function normalizeBoardStatus(status = '', terminationReason = '', opts =
 
 function deriveBoardCardFlags({ status, terminationReason, killed, notFullyIdle, lastModifiedTime, cardState, initializedAt }) {
   const state = cardState && typeof cardState === 'object' ? cardState : {};
-  const manualCol = state.column && state.column !== 'starred' ? state.column : '';
   const boardStatus = normalizeBoardStatus(status, terminationReason, {
     killed,
     notFullyIdle,
-    manualColumn: manualCol,
   });
   const starred = Boolean(state.starred);
   const lastMs = lastModifiedTime ? Date.parse(lastModifiedTime) : 0;
@@ -608,12 +606,40 @@ function deriveBoardCardFlags({ status, terminationReason, killed, notFullyIdle,
 
   return {
     boardStatus,
-    isManual: Boolean(manualCol && boardStatus === manualCol),
+    isManual: false,
     starred,
     archived,
     seenAt: state.seenAt || '',
     isUnread,
   };
+}
+
+export async function renameConversation(cascadeId, title) {
+  const id = String(cascadeId || '').trim();
+  const trimmed = String(title || '').trim();
+  if (!id || !trimmed) return { ok: false, error: 'missing id or title' };
+
+  let existingAnnotations = {};
+  try {
+    const resp = await lsRequest('GetAllCascadeTrajectories', {});
+    const raw = resp?.trajectorySummaries?.[id]?.annotations;
+    if (raw && typeof raw === 'object') existingAnnotations = raw;
+  } catch {
+    // ignore fetch error; proceed with title-only annotations
+  }
+
+  try {
+    await lsRequest('UpdateConversationAnnotations', {
+      cascadeId: id,
+      annotations: {
+        ...existingAnnotations,
+        title: trimmed,
+      },
+    });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err?.message || 'rename failed' };
+  }
 }
 
 export async function getWorkspaceBoardData(limit = 120) {
@@ -624,17 +650,19 @@ export async function getWorkspaceBoardData(limit = 120) {
 
   const localItems = listLocalRecentConversations(limit);
   for (const item of localItems) {
+    const cardState = manualMap[item.id];
     const flags = deriveBoardCardFlags({
       status: item.status,
       terminationReason: '',
       killed: item.killed,
       notFullyIdle: item.notFullyIdle,
       lastModifiedTime: item.lastModifiedTime,
-      cardState: manualMap[item.id],
+      cardState,
       initializedAt,
     });
     byId.set(item.id, {
       ...item,
+      summary: cardState?.customTitle || item.summary,
       ...flags,
     });
   }
@@ -666,18 +694,19 @@ export async function getWorkspaceBoardData(limit = 120) {
       const status = info?.status || prev?.status || '';
       const terminationReason = info?.latestExecutorTerminationReason || '';
       const lastModifiedTime = info?.lastModifiedTime || prev?.lastModifiedTime || '';
+      const cardState = manualMap[id];
       const flags = deriveBoardCardFlags({
         status,
         terminationReason,
         killed: prev?.killed,
         notFullyIdle: prev?.notFullyIdle,
         lastModifiedTime,
-        cardState: manualMap[id],
+        cardState,
         initializedAt,
       });
       byId.set(id, {
         id,
-        summary: info?.summary || prev?.summary || id.slice(0, 8),
+        summary: info?.annotations?.title || cardState?.customTitle || info?.summary || prev?.summary || id.slice(0, 8),
         stepCount: Number(info?.stepCount) || prev?.stepCount || 0,
         lastModifiedTime,
         status,
