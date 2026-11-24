@@ -540,7 +540,8 @@
     bottom: 0;
     left: 0;
     border-radius: 5px;
-    background: var(--surface-hover);
+    background: var(--seg-active-bg);
+    box-shadow: var(--seg-active-shadow);
     pointer-events: none;
     z-index: 0;
     will-change: transform, width;
@@ -1146,12 +1147,16 @@
     white-space: nowrap;
   }
   .kpi-val {
-    font-size: 19px;
+    font-size: 18px;
     font-weight: 700;
     letter-spacing: -0.025em;
     color: var(--fg);
     min-height: 26px;
     line-height: 1.25;
+  }
+  .kpi.kpi-primary .kpi-val {
+    font-size: 22px;
+    letter-spacing: -0.03em;
   }
   .kpi-sub {
     font-size: 10.5px;
@@ -1160,6 +1165,87 @@
     line-height: 1.4;
     min-height: 15px;
   }
+  .ws-context-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 24px;
+    margin-bottom: 8px;
+  }
+  .ws-context-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    flex: 1;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--fg-secondary);
+  }
+  .ws-context-name svg {
+    width: 13px;
+    height: 13px;
+    flex: none;
+    color: var(--dim);
+  }
+  .ws-context-label {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .inline-link-btn {
+    display: inline-flex;
+    align-items: center;
+    border: none;
+    background: transparent;
+    padding: 0 2px;
+    margin-left: 4px;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--accent-fg);
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .inline-link-btn:hover { opacity: 0.8; }
+  .empty-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .sub-meta .state-pill {
+    flex: none;
+  }
+  .sub-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10.5px;
+    color: var(--dim);
+    margin-top: 2px;
+  }
+  .sub-meta-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .stage-skeleton .kpi-val,
   .stage-skeleton .kpi-sub,
   .skel-crossfade-out .kpi-val,
@@ -1191,8 +1277,8 @@
     flex: none;
     width: 16px;
     font-size: 10.5px;
-    font-weight: 500;
-    color: var(--muted);
+    font-weight: 600;
+    color: var(--dim);
     text-align: right;
   }
   .sub-left { min-width: 0; flex: 1; }
@@ -1553,6 +1639,7 @@
 
   let viewMode = 'session'; // 'session' | 'summary' | 'settings'
   let previousViewMode = 'summary';
+  let returnToSummary = false;
   let summaryScope = 'workspace'; // 'workspace' | 'all'
   let summaryRange = 'today'; // 'today' | '7d' | '30d' | 'all'
   let summaryMetric = 'tokens'; // 'tokens' | 'cost'
@@ -1826,6 +1913,35 @@
     if (mockScenario === 'error') {
       return { error: 'connect-failed', message: '无法读取全局统计汇总（语言服务器未启动）' };
     }
+    if (mockScenario === 'empty') {
+      return {
+        range: summaryRange,
+        scope: summaryScope,
+        workspaceName: 'agy-context-panel',
+        workspacePath: 'd:\\WorkSpace\\YuG\\agy-extensions\\agy-context-panel',
+        conversations: 0,
+        turns: 0,
+        updatedAt: Date.now(),
+        totals: { all: 0, inputAll: 0, uncachedInput: 0, cacheRead: 0, output: 0, thinking: 0, response: 0 },
+        cache: { hitRate: 0, savedInputTokens: 0 },
+        cost: {
+          total: 0,
+          input: 0,
+          cacheRead: 0,
+          output: 0,
+          savedByCache: 0,
+          avgPerConv: 0,
+          avgPerTurn: 0,
+          pricedTurns: 0,
+          unpricedTurns: 0,
+        },
+        speed: { avgTokensPerSec: 0, avgTtftSec: 0 },
+        timeline: [],
+        models: [],
+        topConversations: [],
+        topCostConversations: [],
+      };
+    }
     const mult = summaryRange === 'today' ? 1 : (summaryRange === '7d' ? 4.2 : (summaryRange === '30d' ? 11.5 : 18.0));
     const scopeMult = summaryScope === 'all' ? 1.6 : 1;
     const f = mult * scopeMult;
@@ -1881,11 +1997,15 @@
       },
     ];
     const mockConvs = [
-      { id: 'conv-mock-main-8f3a', title: '评价状态栏与侧边栏设计', modelName: 'Gemini 4 Hydrogen', turns: 14, cacheHitRate: 81.4, totalTokens: 1296000, cost: 1.45 * f, subagentCount: 2 },
-      { id: 'conv-mock-02', title: 'CDP 注入稳定性与重连排查', modelName: 'Claude 4.5 Sonnet', turns: 19, cacheHitRate: 76.8, totalTokens: 942000, cost: 1.62 * f, subagentCount: 1 },
-      { id: 'conv-mock-03', title: 'ECharts 矩形树图配色微调', modelName: 'Gemini 4 Flash', turns: 8, cacheHitRate: 84.0, totalTokens: 318000, cost: 0.17 * f, subagentCount: 0 },
+      { id: 'conv-mock-main-8f3a', title: '评价状态栏与侧边栏设计', modelName: 'Gemini 4 Hydrogen', turns: Math.round(14 * f), cacheHitRate: 81.4, totalTokens: Math.round(1296000 * f), cost: 1.45 * f, subagentCount: 2 },
+      { id: 'conv-mock-02', title: 'CDP 注入稳定性与重连排查', modelName: 'Claude 4.5 Sonnet', turns: Math.round(19 * f), cacheHitRate: 76.8, totalTokens: Math.round(942000 * f), cost: 1.62 * f, subagentCount: 1 },
+      { id: 'conv-mock-03', title: 'ECharts 矩形树图配色微调', modelName: 'Gemini 4 Flash', turns: Math.round(8 * f), cacheHitRate: 84.0, totalTokens: Math.round(318000 * f), cost: 0.17 * f, subagentCount: 0 },
     ];
     return {
+      range: summaryRange,
+      scope: summaryScope,
+      workspaceName: 'agy-context-panel',
+      workspacePath: 'd:\\WorkSpace\\YuG\\agy-extensions\\agy-context-panel',
       conversations: Math.round(8 * f),
       turns: Math.round(64 * f),
       updatedAt: Date.now(),
@@ -2408,13 +2528,16 @@
     const peakLabel = isCost
       ? `峰值 ${fmtCost(Math.max(0, ...timeline.map((b) => Number(b.cost) || 0)))}`
       : `峰值 ${fmtTok(Math.max(1, ...timeline.map((b) => b.total || 0)))}`;
+    const chartSummary = isCost
+      ? `时段费用趋势图，共 ${timeline.length} 个时段，${peakLabel}`
+      : `时段消耗趋势图，共 ${timeline.length} 个时段，${peakLabel}`;
     return `
       <div class="chart-card">
         <div class="chart-head">
           <span class="chart-title">${isCost ? '时段费用趋势' : '时段消耗趋势'}</span>
           <span class="dim num" style="font-size:10.5px;">${peakLabel}</span>
         </div>
-        <div id="chart-timeline" style="width:100%;height:152px;"></div>
+        <div id="chart-timeline" role="img" aria-label="${esc(chartSummary)}" style="width:100%;height:152px;"></div>
       </div>
     `;
   }
@@ -2432,6 +2555,14 @@
       return `${sym}${Math.round(v)}`;
     };
 
+    const cacheSeriesData = timeline.map((b) => (isCost ? convertCost(b.cacheReadCost) : (b.cacheRead || 0)));
+    const inputSeriesData = timeline.map((b) => (isCost ? convertCost(b.inputCost) : (b.uncachedInput || 0)));
+    const outputSeriesData = timeline.map((b) => (isCost ? convertCost(b.outputCost) : (b.output || 0)));
+    const withTopRadius = (arr, seriesIdx) => arr.map((v, i) => {
+      const topIdx = outputSeriesData[i] > 0 ? 2 : (inputSeriesData[i] > 0 ? 1 : (cacheSeriesData[i] > 0 ? 0 : -1));
+      return topIdx === seriesIdx ? { value: v, itemStyle: { borderRadius: [3, 3, 0, 0] } } : v;
+    });
+
     initEChart('chart-timeline', {
       tooltip: {
         trigger: 'axis',
@@ -2440,23 +2571,23 @@
         backgroundColor: theme.tooltipBg,
         borderColor: theme.tooltipBorder,
         borderWidth: 1,
-        borderRadius: 8,
-        padding: [7, 9],
-        extraCssText: `box-shadow:${theme.tooltipShadow};font-variant-numeric:tabular-nums;`,
-        textStyle: { color: theme.fg, fontSize: 11 },
+        borderRadius: 7,
+        padding: [5, 8],
+        extraCssText: `box-shadow:${theme.tooltipShadow};font-variant-numeric:tabular-nums;line-height:1.35;`,
+        textStyle: { color: theme.fg, fontSize: 10.5 },
         formatter: (params) => {
           const idx = params?.[0]?.dataIndex ?? 0;
           const b = timeline[idx];
           if (!b) return '';
           const dot = (c) => `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${c};margin-right:4px;vertical-align:1px;"></span>`;
           if (isCost) {
-            return `<div style="font-weight:600;margin-bottom:3px;">${esc(b.label)} · ${b.turns} 轮</div>`
-              + `<div style="margin-bottom:2px;">估算费用: <b>${fmtCost(b.cost)}</b> <span style="color:${theme.dim};">(${fmtTok(b.total)})</span></div>`
+            return `<div style="font-weight:600;margin-bottom:2px;">${esc(b.label)} · ${b.turns} 轮</div>`
+              + `<div style="margin-bottom:2px;">估算: <b>${fmtCost(b.cost)}</b> <span style="color:${theme.dim};">(${fmtTok(b.total)})</span></div>`
               + `<div>${dot(theme.vizCache)}缓存读取: ${fmtCost(b.cacheReadCost)}</div>`
               + `<div>${dot(theme.vizInput)}新输入: ${fmtCost(b.inputCost)}</div>`
               + `<div>${dot(theme.vizOutput)}输出: ${fmtCost(b.outputCost)}</div>`;
           }
-          return `<div style="font-weight:600;margin-bottom:3px;">${esc(b.label)} · ${b.turns} 轮</div>`
+          return `<div style="font-weight:600;margin-bottom:2px;">${esc(b.label)} · ${b.turns} 轮</div>`
             + `<div style="margin-bottom:2px;">总计: <b>${fmtTok(b.total)}</b>${b.cost > 0 ? ` <span style="color:${theme.dim};">(≈ ${fmtCost(b.cost)})</span>` : ''}</div>`
             + `<div>${dot(theme.vizCache)}缓存读取: ${fmtTok(b.cacheRead)}</div>`
             + `<div>${dot(theme.vizInput)}新输入: ${fmtTok(b.uncachedInput)}</div>`
@@ -2497,7 +2628,7 @@
           stack: 'tok',
           barMaxWidth: 22,
           itemStyle: { color: theme.vizCache },
-          data: timeline.map((b) => (isCost ? convertCost(b.cacheReadCost) : (b.cacheRead || 0))),
+          data: withTopRadius(cacheSeriesData, 0),
         },
         {
           name: '新输入',
@@ -2505,15 +2636,15 @@
           stack: 'tok',
           barMaxWidth: 22,
           itemStyle: { color: theme.vizInput },
-          data: timeline.map((b) => (isCost ? convertCost(b.inputCost) : (b.uncachedInput || 0))),
+          data: withTopRadius(inputSeriesData, 1),
         },
         {
           name: '输出',
           type: 'bar',
           stack: 'tok',
           barMaxWidth: 22,
-          itemStyle: { color: theme.vizOutput, borderRadius: [3, 3, 0, 0] },
-          data: timeline.map((b) => (isCost ? convertCost(b.outputCost) : (b.output || 0))),
+          itemStyle: { color: theme.vizOutput },
+          data: withTopRadius(outputSeriesData, 2),
         },
       ],
     });
@@ -2564,13 +2695,6 @@
 
   function renderTopBar(extraRightHtml = '') {
     const isSettings = viewMode === 'settings';
-    const scopeHtml = viewMode === 'summary' ? `
-      <div class="ghost-seg" role="group" aria-label="统计范围">
-        <button type="button" class="ghost-btn ${summaryScope === 'workspace' ? 'active' : ''}" data-scope="workspace" aria-pressed="${summaryScope === 'workspace'}">工作区</button>
-        <button type="button" class="ghost-btn ${summaryScope === 'all' ? 'active' : ''}" data-scope="all" aria-pressed="${summaryScope === 'all'}">全部</button>
-      </div>
-      <span class="tool-div" aria-hidden="true"></span>
-    ` : '';
     return `
       <div class="header">
         <div class="seg-bar" role="tablist" aria-label="视图切换">
@@ -2579,7 +2703,6 @@
         </div>
         <div class="header-actions">
           ${extraRightHtml}
-          ${scopeHtml}
           <button id="btn-pricing-settings" class="icon-btn icon-only ${isSettings ? 'active' : ''}" type="button" title="模型单价与汇率设置" aria-label="模型单价与汇率设置" aria-pressed="${isSettings}">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <circle cx="8" cy="8" r="2.2"/>
@@ -2618,11 +2741,13 @@
             <button type="button" class="ghost-btn ${summaryMetric === 'tokens' ? 'active' : ''}" data-metric="tokens" aria-pressed="${summaryMetric === 'tokens'}">用量</button>
             <button type="button" class="ghost-btn ${summaryMetric === 'cost' ? 'active' : ''}" data-metric="cost" aria-pressed="${summaryMetric === 'cost'}">费用</button>
           </div>
-          <span class="tool-div" aria-hidden="true"></span>
-          <div class="ghost-seg ghost-currency${summaryMetric === 'tokens' ? ' is-muted' : ''}" role="group" aria-label="货币单位" title="切换费用估算展示货币（当前汇率 1 USD = ${usdToCny} CNY）">
-            <button type="button" class="ghost-btn ${currency === 'USD' ? 'active' : ''}" data-currency="USD" aria-pressed="${currency === 'USD'}" aria-label="美元 USD">$</button>
-            <button type="button" class="ghost-btn ${currency === 'CNY' ? 'active' : ''}" data-currency="CNY" aria-pressed="${currency === 'CNY'}" aria-label="人民币 CNY">¥</button>
-          </div>
+          ${summaryMetric === 'cost' ? `
+            <span class="tool-div" aria-hidden="true"></span>
+            <div class="ghost-seg ghost-currency" role="group" aria-label="货币单位" title="切换费用估算展示货币（当前汇率 1 USD = ${usdToCny} CNY）">
+              <button type="button" class="ghost-btn ${currency === 'USD' ? 'active' : ''}" data-currency="USD" aria-pressed="${currency === 'USD'}" aria-label="美元 USD">$</button>
+              <button type="button" class="ghost-btn ${currency === 'CNY' ? 'active' : ''}" data-currency="CNY" aria-pressed="${currency === 'CNY'}" aria-label="人民币 CNY">¥</button>
+            </div>
+          ` : ''}
         </div>
       </div>
     `;
@@ -2652,13 +2777,7 @@
         if (!next || next === summaryMetric) return;
         summaryMetric = next;
         saveUiState();
-        root.querySelectorAll('.ghost-btn[data-metric]').forEach((b) => {
-          const active = b.getAttribute('data-metric') === summaryMetric;
-          b.classList.toggle('active', active);
-          b.setAttribute('aria-pressed', String(active));
-        });
-        root.querySelector('.ghost-currency')?.classList.toggle('is-muted', summaryMetric === 'tokens');
-        syncSegThumbs(root);
+        syncTopBar();
         if (lastSummary && !lastSummary.error && !activeTransition) {
           pendingChartAnim = true;
           renderSummary(lastSummary);
@@ -2720,6 +2839,10 @@
 
     if (mode === 'summary') {
       return `
+        <div class="ws-context-bar">
+          <span class="skel skel-line" style="width:128px;height:14px;"></span>
+          <span class="skel skel-pill" style="width:82px;height:22px;border-radius:6px;"></span>
+        </div>
         ${skelBento}
         <div class="chart-card">
           <div class="chart-head">
@@ -2742,6 +2865,10 @@
                     <span class="skel skel-line" style="width:28%;"></span>
                   </div>
                   <div class="model-bar"><div class="skel" style="width:100%;height:100%;"></div></div>
+                  <div class="model-bar-sub">
+                    <span class="skel skel-line" style="width:36%;"></span>
+                    <span class="skel skel-line" style="width:22%;"></span>
+                  </div>
                 </div>
               </div>
             `).join('')}
@@ -2786,9 +2913,9 @@
     `;
   }
 
-  const STAGE_EXIT_MS = 150;
-  const STAGE_FADE_EXIT_MS = 120;
-  const MIN_SKEL_MS = 360;
+  const STAGE_EXIT_MS = 120;
+  const STAGE_FADE_EXIT_MS = 100;
+  const MIN_SKEL_MS = 240;
   const CROSSFADE_OUT_MS = 220;
 
   let transitionToken = 0;
@@ -2802,12 +2929,25 @@
   function ensureShell() {
     let topBar = document.getElementById('top-bar');
     let stage = document.getElementById('view-stage');
+    let srStatus = document.getElementById('sr-status');
     if (!topBar || !stage) {
-      appEl.innerHTML = '<div id="top-bar"></div><div id="view-stage" class="view-stage"></div>';
+      appEl.innerHTML = '<div id="top-bar"></div><div id="view-stage" class="view-stage"></div><div id="sr-status" class="sr-only" aria-live="polite"></div>';
       topBar = document.getElementById('top-bar');
       stage = document.getElementById('view-stage');
+      srStatus = document.getElementById('sr-status');
+    } else if (!srStatus) {
+      srStatus = document.createElement('div');
+      srStatus.id = 'sr-status';
+      srStatus.className = 'sr-only';
+      srStatus.setAttribute('aria-live', 'polite');
+      appEl.appendChild(srStatus);
     }
-    return { topBar, stage };
+    return { topBar, stage, srStatus };
+  }
+
+  function announceStatus(msg) {
+    const { srStatus } = ensureShell();
+    if (srStatus) srStatus.textContent = msg || '';
   }
 
   function captureSegRects(root) {
@@ -2943,7 +3083,10 @@
       ? 'forward'
       : (prev === 'settings' ? 'backward' : (next === 'summary' ? 'forward' : 'backward'));
     viewMode = next;
-    if (viewMode !== 'settings') saveUiState();
+    if (viewMode === 'session' || viewMode === 'summary') {
+      if (viewMode === 'summary') returnToSummary = false;
+      saveUiState();
+    }
     lastFetchError = '';
     pricingStatusMsg = '';
     pricingStatusErr = false;
@@ -3037,19 +3180,6 @@
         lastSummaryPayload = '';
         lastAnimatedSessionId = '';
         beginViewTransition({ mode: viewMode, direction: 'fade' });
-        refresh(true);
-      });
-    });
-    topBar.querySelectorAll('.ghost-btn[data-scope]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const next = btn.getAttribute('data-scope');
-        if (!next || next === summaryScope) return;
-        summaryScope = next;
-        lastSummary = null;
-        lastSummaryPayload = '';
-        saveUiState();
-        beginViewTransition({ mode: 'summary', direction: 'fade' });
-        resetPollTimer();
         refresh(true);
       });
     });
@@ -3359,18 +3489,79 @@
       { id: '30d', label: '近 30 天' },
       { id: 'all', label: '全部' },
     ];
+    const rangeLabel = ranges.find((r) => r.id === summaryRange)?.label || summaryRange;
     const updatedTime = summary.updatedAt ? new Date(summary.updatedAt).toLocaleTimeString('zh-CN', { hour12: false }) : '';
+    const totalTurns = Number(summary.turns) || 0;
+    const totalConvs = Number(summary.conversations) || 0;
     const totalCostVal = Number(cost.total) || 0;
+    const pricedTurns = Number(cost.pricedTurns) || 0;
+    const unpricedTurns = Number(cost.unpricedTurns) || 0;
+    const allUnpriced = isCost && totalTurns > 0 && pricedTurns === 0;
+    const partialUnpriced = isCost && totalTurns > 0 && pricedTurns > 0 && unpricedTurns > 0;
     const inputCostTotal = (Number(cost.input) || 0) + (Number(cost.cacheRead) || 0);
     const inputCostPct = totalCostVal > 0 ? (inputCostTotal / totalCostVal) * 100 : 0;
     const outputCostPct = totalCostVal > 0 ? ((Number(cost.output) || 0) / totalCostVal) * 100 : 0;
+    const inputAllPct = (Number(totals.all) || 0) > 0 ? ((Number(totals.inputAll) || 0) / Number(totals.all)) * 100 : 0;
+    const avgOutPerTurn = totalTurns > 0 ? (Number(totals.output) || 0) / totalTurns : 0;
+
+    const wsLabel = summaryScope === 'workspace'
+      ? (summary.workspaceName || '当前工作区')
+      : '全部工作区';
+    const wsTooltip = summaryScope === 'workspace'
+      ? (summary.workspacePath ? `当前工作区：${summary.workspacePath}` : '当前工作区统计')
+      : '汇总本地全部工作区对话记录';
+    const wsContextHtml = `
+      <div class="ws-context-bar">
+        <div class="ws-context-name" title="${esc(wsTooltip)}">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.3 1.5h4.7A1.5 1.5 0 0 1 14 6v5.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5v-7Z"/>
+          </svg>
+          <span class="ws-context-label">${esc(wsLabel)}</span>
+        </div>
+        <div class="ghost-seg" role="group" aria-label="统计范围">
+          <button type="button" class="ghost-btn ${summaryScope === 'workspace' ? 'active' : ''}" data-scope="workspace" aria-pressed="${summaryScope === 'workspace'}">工作区</button>
+          <button type="button" class="ghost-btn ${summaryScope === 'all' ? 'active' : ''}" data-scope="all" aria-pressed="${summaryScope === 'all'}">全部</button>
+        </div>
+      </div>
+    `;
+
+    if (totalTurns === 0) {
+      const emptyLayer = commitViewContent(`
+        ${renderErrBanner()}
+        ${wsContextHtml}
+        <div class="empty-card">
+          <div class="empty-card-title">${summaryScope === 'workspace' ? '当前工作区' : '全部工作区'}在${esc(rangeLabel)}暂无调用记录</div>
+          <div class="empty-card-sub">可切换更大的时间范围或查看全部工作区数据</div>
+          <div class="empty-actions">
+            ${summaryRange === 'today' ? '<button type="button" class="icon-btn" data-quick-range="7d">查看近 7 天</button>' : ''}
+            ${summaryScope === 'workspace' ? '<button type="button" class="icon-btn" data-quick-scope="all">查看全部工作区</button>' : ''}
+          </div>
+        </div>
+        <footer class="num">
+          <span>时段: ${esc(rangeLabel)} · 每 60s 自动更新</span>
+          <span>${esc(updatedTime)}</span>
+        </footer>
+      `);
+      bindSummaryStageEvents(emptyLayer, summary, hostCid);
+      announceStatus(`${wsLabel}${rangeLabel}暂无调用记录`);
+      pendingChartAnim = false;
+      pendingExpandAnim = '';
+      return;
+    }
+
+    const unpricedBannerHtml = partialUnpriced ? `
+      <div class="hero-alert warn" role="status">
+        <span>有 ${unpricedTurns} 轮调用未匹配单价，已从合计中排除</span>
+        <button class="hero-alert-btn" type="button" data-go-settings="1">配置单价</button>
+      </div>
+    ` : '';
 
     const bentoHtml = isCost ? `
       <div class="bento">
-        <div class="kpi">
+        <div class="kpi kpi-primary">
           <div class="kpi-head"><span>估算总费用</span><span class="kpi-tag">API 参考价</span></div>
-          <div class="kpi-val num" style="color:var(--warn-fg)">${fmtCostHtml(totalCostVal)}</div>
-          <div class="kpi-sub num">${summary.conversations || 0} 会话 · ${summary.turns || 0} 轮 · 均 ${fmtCost(cost.avgPerTurn)}/轮</div>
+          <div class="kpi-val num" style="${allUnpriced ? 'font-size:15px;color:var(--warn-fg);' : 'color:var(--warn-fg);'}">${allUnpriced ? '未配置模型单价 <button type="button" class="inline-link-btn" data-go-settings="1">去配置</button>' : fmtCostHtml(totalCostVal)}</div>
+          <div class="kpi-sub num">${totalConvs} 会话 · ${totalTurns} 轮${allUnpriced ? '' : ` · <span style="white-space:nowrap;">均 ${fmtCost(cost.avgPerTurn)}/轮</span>`}</div>
         </div>
 
         <div class="kpi">
@@ -3388,31 +3579,31 @@
         <div class="kpi">
           <div class="kpi-head"><span>输出费用</span><span class="kpi-tag num">占 ${fmtPct(outputCostPct)}</span></div>
           <div class="kpi-val num">${fmtCostHtml(cost.output)}</div>
-          <div class="kpi-sub num">输出 ${fmtTok(totals.output)} · 均 ${fmtCost(cost.avgPerConv)}/会话</div>
+          <div class="kpi-sub num">输出 ${fmtTok(totals.output)} · <span style="white-space:nowrap;">均 ${fmtCost(cost.avgPerConv)}/会话</span></div>
         </div>
       </div>
     ` : `
       <div class="bento">
-        <div class="kpi">
+        <div class="kpi kpi-primary">
           <div class="kpi-head"><span>Token 总消耗</span><span class="kpi-tag num">${totalCostVal > 0 ? `≈ ${fmtCost(totalCostVal)}` : '合计'}</span></div>
           <div class="kpi-val num">${fmtTokHtml(totals.all)}</div>
-          <div class="kpi-sub num">${summary.conversations || 0} 个活跃会话 · ${summary.turns || 0} 轮</div>
+          <div class="kpi-sub num">${totalConvs} 个活跃会话 · ${totalTurns} 轮</div>
         </div>
 
         <div class="kpi">
           <div class="kpi-head"><span>缓存命中 &amp; 均速</span><span class="kpi-tag">性能</span></div>
-          <div class="kpi-val num" style="color:var(--ok-fg)">${fmtPctHtml(cache.hitRate)}</div>
+          <div class="kpi-val num">${fmtPctHtml(cache.hitRate)}</div>
           <div class="kpi-sub num">均速 ${fmtSpeed(speed.avgTokensPerSec)} · 首字 ${fmtSec(speed.avgTtftSec)}</div>
         </div>
 
         <div class="kpi">
-          <div class="kpi-head"><span>累计输入</span><span class="kpi-tag num">省 ${fmtTok(cache.savedInputTokens)}</span></div>
+          <div class="kpi-head"><span>累计输入</span><span class="kpi-tag num">占总消耗 ${fmtPct(inputAllPct)}</span></div>
           <div class="kpi-val num">${fmtTokHtml(totals.inputAll)}</div>
           <div class="kpi-sub num">新 ${fmtTok(totals.uncachedInput)} · 缓存 ${fmtTok(totals.cacheRead)}</div>
         </div>
 
         <div class="kpi">
-          <div class="kpi-head"><span>累计输出</span><span class="kpi-tag num">${summary.turns || 0} 轮</span></div>
+          <div class="kpi-head"><span>累计输出</span><span class="kpi-tag num">均 ${fmtTok(avgOutPerTurn)}/轮</span></div>
           <div class="kpi-val num">${fmtTokHtml(totals.output)}</div>
           <div class="kpi-sub num">思考 ${fmtTok(totals.thinking)} · 回复 ${fmtTok(totals.response)}</div>
         </div>
@@ -3421,7 +3612,8 @@
 
     const contentLayer = commitViewContent(`
       ${renderErrBanner()}
-
+      ${wsContextHtml}
+      ${unpricedBannerHtml}
       ${bentoHtml}
 
       ${renderTimelineBarChart(summary.timeline)}
@@ -3436,13 +3628,14 @@
             ${models.map((m) => {
               const barPct = Math.min(100, Number(isCost ? m.costPct : m.pct) || 0);
               const tip = formatPricingTip(m);
+              const configLink = !m.pricing ? ' <button type="button" class="inline-link-btn" data-go-settings="1">配置</button>' : '';
               if (isCost) {
                 return `
                   <div class="model-row" title="${esc(tip)}">
                     <div class="model-bar-wrap">
                       <div class="model-bar-top">
                         <span class="model-bar-name">${esc(m.modelName)}</span>
-                        <span class="num">${m.pricing ? fmtCostHtml(m.cost) : '<span class="dim">未知单价</span>'} <span class="dim">(${fmtPct(m.costPct)})</span></span>
+                        <span class="num">${m.pricing ? fmtCostHtml(m.cost) : `<span class="dim">未知单价</span>${configLink}`} <span class="dim">(${fmtPct(m.costPct)})</span></span>
                       </div>
                       <div class="model-bar cost-bar"><div style="width:${barPct.toFixed(1)}%"></div></div>
                       <div class="model-bar-sub num">
@@ -3458,9 +3651,13 @@
                   <div class="model-bar-wrap">
                     <div class="model-bar-top">
                       <span class="model-bar-name">${esc(m.modelName)}</span>
-                      <span class="num">${fmtTokHtml(m.tokens)} <span class="dim">(${fmtPct(m.pct)} · ${m.turns}轮${m.cost > 0 ? ` · ${fmtCost(m.cost)}` : ''})</span></span>
+                      <span class="num">${fmtTokHtml(m.tokens)} <span class="dim">(${fmtPct(m.pct)})</span></span>
                     </div>
                     <div class="model-bar"><div style="width:${barPct.toFixed(1)}%"></div></div>
+                    <div class="model-bar-sub num">
+                      <span>入 ${fmtTok(m.input)} · 出 ${fmtTok(m.output)}</span>
+                      <span>${m.turns} 轮${m.pricing ? (m.cost > 0 ? ` · ${fmtCost(m.cost)}` : '') : ` · 未配单价${configLink}`}</span>
+                    </div>
                   </div>
                 </div>
               `;
@@ -3489,10 +3686,10 @@
                   <div class="sub-left">
                     <div class="sub-title">
                       <span class="sub-role">${esc(c.title)}</span>
-                      ${c.subagentCount > 0 ? `<span class="state-pill idle num">+${c.subagentCount} 子代理</span>` : ''}
                     </div>
-                    <div class="sub-meta num">
-                      ${esc(c.modelName)} · ${c.turns} 轮 · 命中 ${fmtPct(c.cacheHitRate)}
+                    <div class="sub-meta-row num">
+                      <span class="sub-meta-text">${esc(c.modelName)} · ${c.turns} 轮 · 命中 ${fmtPct(c.cacheHitRate)}</span>
+                      ${c.subagentCount > 0 ? `<span class="state-pill idle num">+${c.subagentCount} 子代理</span>` : ''}
                     </div>
                   </div>
                   <div class="sub-right num">
@@ -3508,10 +3705,63 @@
       </div>
 
       <footer class="num">
-        <span>时段: ${ranges.find((r) => r.id === summaryRange)?.label || summaryRange} · ${isCost ? '按公开 API 参考价估算 · ' : ''}每 60s 自动更新</span>
+        <span>时段: ${esc(rangeLabel)} · ${isCost ? `按公开 API 参考价估算${currency === 'CNY' ? ` · 汇率 ${usdToCny}` : ''} · ` : ''}每 60s 自动更新</span>
         <span>${esc(updatedTime)}</span>
       </footer>
     `);
+
+    bindSummaryStageEvents(contentLayer, summary, hostCid);
+    mountTimelineChart(summary.timeline);
+    announceStatus(`已更新${wsLabel}${rangeLabel}统计：共 ${totalConvs} 个会话，${totalTurns} 轮，总消耗 ${fmtTok(totals.all)}`);
+    pendingChartAnim = false;
+    pendingExpandAnim = '';
+  }
+
+  function bindSummaryStageEvents(contentLayer, summary, hostCid) {
+    contentLayer.querySelectorAll('.ghost-btn[data-scope]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const next = btn.getAttribute('data-scope');
+        if (!next || next === summaryScope) return;
+        summaryScope = next;
+        lastSummary = null;
+        lastSummaryPayload = '';
+        saveUiState();
+        beginViewTransition({ mode: 'summary', direction: 'fade' });
+        resetPollTimer();
+        refresh(true);
+      });
+    });
+
+    contentLayer.querySelector('[data-quick-range]')?.addEventListener('click', (e) => {
+      const next = e.currentTarget.getAttribute('data-quick-range');
+      if (!next) return;
+      summaryRange = next;
+      lastSummary = null;
+      lastSummaryPayload = '';
+      saveUiState();
+      beginViewTransition({ mode: 'summary', direction: 'forward' });
+      resetPollTimer();
+      refresh(true);
+    });
+
+    contentLayer.querySelector('[data-quick-scope]')?.addEventListener('click', (e) => {
+      const next = e.currentTarget.getAttribute('data-quick-scope');
+      if (!next) return;
+      summaryScope = next;
+      lastSummary = null;
+      lastSummaryPayload = '';
+      saveUiState();
+      beginViewTransition({ mode: 'summary', direction: 'fade' });
+      resetPollTimer();
+      refresh(true);
+    });
+
+    contentLayer.querySelectorAll('[data-go-settings]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        switchView('settings');
+      });
+    });
 
     contentLayer.querySelector('#btn-toggle-top-convs')?.addEventListener('click', () => {
       topConvsExpanded = !topConvsExpanded;
@@ -3525,6 +3775,7 @@
         const cid = el.getAttribute('data-conv-id');
         if (!cid) return;
         selectedConversationId = cid === hostCid ? '' : cid;
+        returnToSummary = true;
         expandedTurns.clear();
         viewMode = 'session';
         saveUiState();
@@ -3543,9 +3794,6 @@
         }
       });
     });
-    mountTimelineChart(summary.timeline);
-    pendingChartAnim = false;
-    pendingExpandAnim = '';
   }
 
   function render(data) {
@@ -3793,13 +4041,14 @@
     ` : '';
 
     const backTarget = data.parentConversationId || data.rootConversationId || (selectedConversationId && hostCid && selectedConversationId !== hostCid ? hostCid : '');
-    const showBackBar = Boolean(backTarget && backTarget !== data.cascadeId);
+    const isReturnSummary = returnToSummary && !data.parentConversationId;
+    const showBackBar = isReturnSummary || Boolean(backTarget && backTarget !== data.cascadeId);
     const backBarHtml = showBackBar ? `
       <div class="back-bar">
-        <span class="dim">${data.parentConversationId ? '当前正在查看子代理' : '当前正在查看其他会话'}</span>
-        <button id="btn-back-parent" class="back-btn" data-target="${esc(backTarget)}">
+        <span class="dim">${data.parentConversationId ? '当前正在查看子代理' : (isReturnSummary ? '当前正在查看排行会话' : '当前正在查看其他会话')}</span>
+        <button id="btn-back-parent" class="back-btn" ${isReturnSummary ? 'data-return-summary="1"' : `data-target="${esc(backTarget)}"`}>
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 4L6 8l4 4"/></svg>
-          <span>${data.parentConversationId ? '返回主代理' : '回到当前会话'}</span>
+          <span>${data.parentConversationId ? '返回主代理' : (isReturnSummary ? '返回全局统计' : '回到当前会话')}</span>
         </button>
       </div>
     ` : '';
@@ -4057,6 +4306,12 @@
       });
     });
     contentLayer.querySelector('#btn-back-parent')?.addEventListener('click', (e) => {
+      if (e.currentTarget.getAttribute('data-return-summary') === '1') {
+        selectedConversationId = '';
+        returnToSummary = false;
+        switchView('summary');
+        return;
+      }
       const target = e.currentTarget.getAttribute('data-target') || '';
       selectedConversationId = target === hostCid ? '' : target;
       expandedTurns.clear();
@@ -4210,7 +4465,9 @@
       return;
     }
     try {
-      const res = await doFetch(`/api/summary?range=${encodeURIComponent(summaryRange)}&scope=${encodeURIComponent(summaryScope)}`);
+      const cid = activeSidecarConversation();
+      const cidParam = cid ? `&conversationId=${encodeURIComponent(cid)}` : '';
+      const res = await doFetch(`/api/summary?range=${encodeURIComponent(summaryRange)}&scope=${encodeURIComponent(summaryScope)}${cidParam}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const summary = await res.json();
       if (seq !== refreshSeq || viewMode !== 'summary') return;

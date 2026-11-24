@@ -391,14 +391,33 @@ export function findLocalSubagentIds(parentOrRootId, appDataDir = resolveAppData
 }
 
 /**
- * Aggregate global token usage across ALL workspaces by reading Antigravity's local SQLite databases.
+ * Collect conversation metric items from local SQLite databases, optionally filtered by workspace keys.
  */
-export function getLocalGlobalSummary(range = 'today', cutoffMs = 0, catalog = {}, appDataDir = resolveAppDataDir()) {
+export function collectLocalConversationItems(cutoffMs = 0, catalog = {}, appDataDir = resolveAppDataDir(), options = {}) {
   const index = readSummaryIndex(appDataDir);
   if (!index) {
     throw new Error('未找到本地全局索引数据库 conversation_summaries.db');
   }
   const { rows, parentMap } = index;
+
+  const targetKeys = options?.workspaceKeys
+    ? new Set(Array.from(options.workspaceKeys).map((k) => normalizeWorkspaceUriKey(k)).filter(Boolean))
+    : null;
+  const hasWorkspaceFilter = Boolean(targetKeys && targetKeys.size > 0);
+
+  let matchedIds = null;
+  if (hasWorkspaceFilter) {
+    matchedIds = new Set();
+    for (const r of rows) {
+      const id = r.conversation_id;
+      if (!id) continue;
+      const uris = parseWorkspaceUrisField(r.workspace_uris);
+      const keys = uris.map(normalizeWorkspaceUriKey).filter(Boolean);
+      if (keys.some((k) => targetKeys.has(k))) {
+        matchedIds.add(id);
+      }
+    }
+  }
 
   const candidates = [];
   for (const r of rows) {
@@ -408,6 +427,9 @@ export function getLocalGlobalSummary(range = 'today', cutoffMs = 0, catalog = {
     if (cutoffMs > 0 && ts < cutoffMs) continue;
     const isSubagent = parentMap.has(id);
     const rootId = isSubagent ? resolveRootConversationId(id, parentMap) : id;
+    if (matchedIds && !matchedIds.has(id) && !matchedIds.has(rootId)) {
+      continue;
+    }
     const mtimeIso = ts > 0 ? new Date(ts).toISOString() : '';
     candidates.push({
       id,
@@ -437,6 +459,14 @@ export function getLocalGlobalSummary(range = 'today', cutoffMs = 0, catalog = {
     }
   }
 
+  return items;
+}
+
+/**
+ * Aggregate global token usage across ALL workspaces by reading Antigravity's local SQLite databases.
+ */
+export function getLocalGlobalSummary(range = 'today', cutoffMs = 0, catalog = {}, appDataDir = resolveAppDataDir()) {
+  const items = collectLocalConversationItems(cutoffMs, catalog, appDataDir);
   const stats = aggregateGlobalStats(items, range);
   return {
     range,

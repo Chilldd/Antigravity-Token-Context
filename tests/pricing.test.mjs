@@ -169,3 +169,108 @@ test('aggregateGlobalStats aggregates model costs, timeline costs, and topCostCo
     else process.env.AGY_PRICING_CONFIG_PATH = prevEnv;
   }
 });
+
+test('aggregateGlobalStats handles all-unpriced and partially-unpriced models honestly without NaN', () => {
+  const tempPath = join(tmpdir(), `agy-pricing-unpriced-${Date.now()}.json`);
+  const prevEnv = process.env.AGY_PRICING_CONFIG_PATH;
+  process.env.AGY_PRICING_CONFIG_PATH = tempPath;
+  clearPricingCache();
+
+  try {
+    const allUnpriced = aggregateGlobalStats(
+      [
+        {
+          cascadeId: 'u-1',
+          title: 'Unknown Model Chat',
+          isSubagent: false,
+          lastModifiedTime: '2026-11-24T08:00:00Z',
+          modelName: 'MODEL_PLACEHOLDER_M999',
+          turnCount: 2,
+          totals: { uncachedInput: 100_000, cacheRead: 200_000, cacheCreation: 0, inputAll: 300_000, output: 50_000, all: 350_000 },
+          allTurns: [
+            { modelName: 'MODEL_PLACEHOLDER_M999', createdAt: '2026-11-24T08:00:00Z', inputTokens: 50_000, cacheReadTokens: 100_000, outputTokens: 25_000 },
+            { modelName: 'MODEL_PLACEHOLDER_M999', createdAt: '2026-11-24T08:05:00Z', inputTokens: 50_000, cacheReadTokens: 100_000, outputTokens: 25_000 },
+          ],
+        },
+      ],
+      'today',
+    );
+    assert.equal(allUnpriced.turns, 2);
+    assert.equal(allUnpriced.cost.pricedTurns, 0);
+    assert.equal(allUnpriced.cost.unpricedTurns, 2);
+    assert.equal(allUnpriced.cost.total, 0);
+    assert.equal(allUnpriced.cost.avgPerTurn, 0);
+    assert.equal(allUnpriced.models[0].pricing, null);
+    assert.equal(allUnpriced.models[0].costPct, 0);
+    assert.equal(Number.isFinite(allUnpriced.cost.avgPerTurn), true);
+
+    const partial = aggregateGlobalStats(
+      [
+        {
+          cascadeId: 'p-known',
+          title: 'Known Neon',
+          isSubagent: false,
+          lastModifiedTime: '2026-11-24T09:00:00Z',
+          modelName: 'Gemini 4 Neon (Medium)',
+          turnCount: 1,
+          totals: { uncachedInput: 1_000_000, cacheRead: 0, cacheCreation: 0, inputAll: 1_000_000, output: 0, all: 1_000_000 },
+          allTurns: [
+            { modelName: 'Gemini 4 Neon (Medium)', createdAt: '2026-11-24T09:00:00Z', inputTokens: 1_000_000, cacheReadTokens: 0, outputTokens: 0 },
+          ],
+        },
+        {
+          cascadeId: 'p-unknown',
+          title: 'Unknown Tier',
+          isSubagent: false,
+          lastModifiedTime: '2026-11-24T09:10:00Z',
+          modelName: 'CustomExperimental-X',
+          turnCount: 2,
+          totals: { uncachedInput: 500_000, cacheRead: 0, cacheCreation: 0, inputAll: 500_000, output: 100_000, all: 600_000 },
+          allTurns: [
+            { modelName: 'CustomExperimental-X', createdAt: '2026-11-24T09:10:00Z', inputTokens: 250_000, cacheReadTokens: 0, outputTokens: 50_000 },
+            { modelName: 'CustomExperimental-X', createdAt: '2026-11-24T09:12:00Z', inputTokens: 250_000, cacheReadTokens: 0, outputTokens: 50_000 },
+          ],
+        },
+      ],
+      'today',
+    );
+    assert.equal(partial.cost.pricedTurns, 1);
+    assert.equal(partial.cost.unpricedTurns, 2);
+    assert.equal(partial.cost.pricedTurns + partial.cost.unpricedTurns, partial.turns);
+    assert.ok(Math.abs(partial.cost.total - 3.0) < 1e-9);
+    const unknownModel = partial.models.find((m) => m.modelName === 'CustomExperimental-X');
+    assert.equal(unknownModel.pricing, null);
+    assert.equal(unknownModel.cost, 0);
+  } finally {
+    clearPricingCache();
+    if (prevEnv === undefined) delete process.env.AGY_PRICING_CONFIG_PATH;
+    else process.env.AGY_PRICING_CONFIG_PATH = prevEnv;
+  }
+});
+
+test('calculateTokenCost accounts for cacheCreationTokens and non-negative savedByCache', () => {
+  const defaults = getDefaultPricingConfig();
+  const res = calculateTokenCost(
+    {
+      inputTokens: 500_000,
+      cacheReadTokens: 1_000_000,
+      cacheCreationTokens: 500_000,
+      outputTokens: 200_000,
+    },
+    'Gemini 4 Hydrogen (Medium)',
+    '',
+    defaults,
+  );
+  // Hydrogen: input 1.5, cacheRead 0.075, cacheWrite 1.5, output 7.5
+  // input cost = 0.5*1.5 = 0.75, cacheWrite cost = 0.5*1.5 = 0.75
+  // cacheRead cost = 1.0*0.075 = 0.075
+  // output cost = 0.2*7.5 = 1.5
+  assert.equal(res.priced, true);
+  assert.ok(Math.abs(res.input - 0.75) < 1e-9);
+  assert.ok(Math.abs(res.cacheWrite - 0.75) < 1e-9);
+  assert.ok(Math.abs(res.cacheRead - 0.075) < 1e-9);
+  assert.ok(Math.abs(res.output - 1.5) < 1e-9);
+  assert.ok(Math.abs(res.total - 3.075) < 1e-9);
+  assert.ok(res.savedByCache >= 0);
+  assert.ok(Math.abs(res.savedByCache - (1.5 - 0.075)) < 1e-9);
+});

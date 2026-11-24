@@ -79,7 +79,8 @@ app.api('/api/summary', async (data) => {
   try {
     const range = ['today', '7d', '30d', 'all'].includes(data?.range) ? data.range : 'today';
     const scope = data?.scope === 'all' ? 'all' : 'workspace';
-    return await getGlobalSummary(range, scope);
+    const conversationId = typeof data?.conversationId === 'string' ? data.conversationId.trim() : '';
+    return await getGlobalSummary(range, scope, { conversationId });
   } catch (err) {
     return { error: 'failed', message: err.message };
   }

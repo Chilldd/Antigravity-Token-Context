@@ -4,6 +4,7 @@ import https from 'node:https';
 import { promisify } from 'node:util';
 import { ensureBoardInitialized, VALID_BOARD_COLUMNS } from './board-store.mjs';
 import {
+  collectLocalConversationItems,
   findLocalSubagentIds,
   getLocalGlobalSummary,
   listLocalRecentConversations,
@@ -404,7 +405,94 @@ async function mapWithConcurrency(items, limit, fn) {
   return results;
 }
 
-export async function getGlobalSummary(range = 'today', scope = 'workspace') {
+function extractWorkspaceUris(info) {
+  const uris = [];
+  if (Array.isArray(info?.workspaces)) {
+    for (const ws of info.workspaces) {
+      if (ws?.workspaceFolderAbsoluteUri) uris.push(ws.workspaceFolderAbsoluteUri);
+    }
+  }
+  const metaUris = info?.trajectoryMetadata?.workspaceUris;
+  if (Array.isArray(metaUris)) {
+    for (const u of metaUris) {
+      if (u) uris.push(u);
+    }
+  }
+  return uris;
+}
+
+function uriToDisplayPath(uri) {
+  if (!uri) return '';
+  try {
+    return decodeURIComponent(uri.replace(/^file:\/+([A-Za-z]:)/, '$1').replace(/^file:\/\//, ''));
+  } catch {
+    return uri;
+  }
+}
+
+export function filterSummariesByWorkspace(summaries = {}, conversationId = '') {
+  const entries = Object.entries(summaries || {});
+  if (entries.length === 0) {
+    return { filtered: {}, workspaceName: '', workspacePath: '', workspaceKeys: [] };
+  }
+
+  const resolveRootInfo = (cid) => {
+    if (!cid || !summaries[cid]) return null;
+    const info = summaries[cid];
+    if (extractWorkspaceUris(info).length > 0) return info;
+    const meta = info?.trajectoryMetadata || {};
+    const parentId = meta.rootConversationId || meta.parentConversationId || '';
+    if (parentId && summaries[parentId] && extractWorkspaceUris(summaries[parentId]).length > 0) {
+      return summaries[parentId];
+    }
+    return info;
+  };
+
+  let targetInfo = resolveRootInfo(conversationId);
+  if (!targetInfo || extractWorkspaceUris(targetInfo).length === 0) {
+    const sorted = entries
+      .filter(([, info]) => !info?.trajectoryMetadata?.parentConversationId && extractWorkspaceUris(info).length > 0)
+      .sort((a, b) => (Date.parse(b[1]?.lastModifiedTime || '') || 0) - (Date.parse(a[1]?.lastModifiedTime || '') || 0));
+    if (sorted.length > 0) {
+      targetInfo = sorted[0][1];
+    }
+  }
+
+  const targetUris = extractWorkspaceUris(targetInfo);
+  const targetKeys = new Set(targetUris.map((u) => normalizeWorkspaceUriKey(u)).filter(Boolean));
+  const workspaceName = extractWorkspaceDisplayName(targetInfo);
+  const workspacePath = uriToDisplayPath(targetUris[0] || '');
+
+  if (targetKeys.size === 0) {
+    return { filtered: summaries, workspaceName, workspacePath, workspaceKeys: [] };
+  }
+
+  const rootMatched = new Set();
+  for (const [id, info] of entries) {
+    const keys = extractWorkspaceUris(info).map((u) => normalizeWorkspaceUriKey(u)).filter(Boolean);
+    if (keys.some((k) => targetKeys.has(k))) {
+      rootMatched.add(id);
+    }
+  }
+
+  const filtered = {};
+  for (const [id, info] of entries) {
+    if (rootMatched.has(id)) {
+      filtered[id] = info;
+      continue;
+    }
+    const meta = info?.trajectoryMetadata || {};
+    const rootId = meta.rootConversationId || '';
+    const parentId = meta.parentConversationId || '';
+    if ((rootId && rootMatched.has(rootId)) || (parentId && rootMatched.has(parentId))) {
+      filtered[id] = info;
+    }
+  }
+
+  return { filtered, workspaceName, workspacePath, workspaceKeys: Array.from(targetKeys) };
+}
+
+export async function getGlobalSummary(range = 'today', scope = 'workspace', { conversationId = '' } = {}) {
   const cutoffMs = getRangeCutoffMs(range);
   if (scope === 'all') {
     const catalog = await ensureCatalog().catch(() => ({}));
@@ -415,7 +503,8 @@ export async function getGlobalSummary(range = 'today', scope = 'workspace') {
     ensureCatalog(),
     lsRequest('GetAllCascadeTrajectories', {}),
   ]);
-  const summaries = list?.trajectorySummaries || {};
+  const allSummaries = list?.trajectorySummaries || {};
+  const { filtered: summaries, workspaceName, workspacePath, workspaceKeys } = filterSummariesByWorkspace(allSummaries, conversationId);
 
   const candidates = Object.entries(summaries)
     .map(([id, info]) => {
@@ -463,10 +552,29 @@ export async function getGlobalSummary(range = 'today', scope = 'workspace') {
     }
   });
 
-  const stats = aggregateGlobalStats(items, range);
+  let localItems = [];
+  if (workspaceKeys.length > 0) {
+    try {
+      localItems = collectLocalConversationItems(cutoffMs, catalog, undefined, { workspaceKeys });
+    } catch {
+      localItems = [];
+    }
+  }
+
+  const mergedMap = new Map();
+  for (const item of localItems) {
+    if (item?.cascadeId) mergedMap.set(item.cascadeId, item);
+  }
+  for (const item of items) {
+    if (item?.cascadeId) mergedMap.set(item.cascadeId, item);
+  }
+
+  const stats = aggregateGlobalStats(Array.from(mergedMap.values()), range);
   return {
     range,
     scope: 'workspace',
+    workspaceName,
+    workspacePath,
     ...stats,
     updatedAt: new Date().toISOString(),
   };

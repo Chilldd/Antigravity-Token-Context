@@ -264,3 +264,146 @@ test('computeTrajectoryMetrics detects orchestrator mode and aggregates per-mode
   assert.equal(regMetrics.modelBreakdown.length, 1);
   assert.equal(regMetrics.modelBreakdown[0].role, '');
 });
+
+test('empty trajectory and empty global stats return finite zeroes without NaN', () => {
+  const emptyTraj = computeTrajectoryMetrics({ status: 'CASCADE_RUN_STATUS_IDLE', trajectory: { cascadeId: 'empty-1', steps: [], generatorMetadata: [] } });
+  assert.equal(emptyTraj.turnCount, 0);
+  assert.equal(emptyTraj.totals.all, 0);
+  assert.equal(emptyTraj.totals.inputAll, 0);
+  assert.equal(emptyTraj.totals.output, 0);
+  assert.equal(emptyTraj.cache.overallHitRate, 0);
+  assert.equal(emptyTraj.cache.latestHitRate, 0);
+  assert.equal(emptyTraj.context.used, 0);
+  assert.equal(emptyTraj.context.free, 0);
+  assert.equal(emptyTraj.cost.total, 0);
+  assert.equal(emptyTraj.breakdown.dots.length, 100);
+  assert.equal(Number.isFinite(emptyTraj.cache.overallHitRate), true);
+
+  const emptyAgg = aggregateGlobalStats([], 'today');
+  assert.equal(emptyAgg.conversations, 0);
+  assert.equal(emptyAgg.turns, 0);
+  assert.equal(emptyAgg.totals.all, 0);
+  assert.equal(emptyAgg.cache.hitRate, 0);
+  assert.equal(emptyAgg.cost.total, 0);
+  assert.equal(emptyAgg.cost.avgPerTurn, 0);
+  assert.equal(emptyAgg.cost.avgPerConv, 0);
+  assert.equal(emptyAgg.cost.pricedTurns, 0);
+  assert.equal(emptyAgg.cost.unpricedTurns, 0);
+  assert.deepEqual(emptyAgg.timeline, []);
+  assert.deepEqual(emptyAgg.models, []);
+  assert.deepEqual(emptyAgg.topConversations, []);
+  assert.deepEqual(emptyAgg.topCostConversations, []);
+});
+
+test('aggregateGlobalStats preserves mathematical conservation invariants across ranges and weighted subagent cache hit rate', () => {
+  const sampleItems = [
+    {
+      cascadeId: 'root-1',
+      title: 'Root Conversation',
+      isSubagent: false,
+      rootConversationId: '',
+      lastModifiedTime: '2026-11-23T09:15:00Z',
+      modelName: 'Gemini 4 Hydrogen (Medium)',
+      turnCount: 2,
+      totals: { uncachedInput: 1000, cacheRead: 9000, cacheCreation: 500, inputAll: 10500, output: 1000, thinking: 400, response: 600, all: 11500 },
+      allTurns: [
+        { modelName: 'Gemini 4 Hydrogen (Medium)', createdAt: '2026-11-23T09:05:00Z', inputTokens: 600, cacheReadTokens: 4000, cacheCreationTokens: 500, outputTokens: 500, streamingSec: 2.0, ttftSec: 1.0 },
+        { modelName: 'Gemini 4 Hydrogen (Medium)', createdAt: '2026-11-23T09:15:00Z', inputTokens: 400, cacheReadTokens: 5000, cacheCreationTokens: 0, outputTokens: 500, streamingSec: 2.0, ttftSec: 1.0 },
+      ],
+    },
+    {
+      cascadeId: 'sub-1',
+      title: 'Worker',
+      isSubagent: true,
+      rootConversationId: 'root-1',
+      lastModifiedTime: '2026-11-23T09:20:00Z',
+      modelName: 'Gemini 4 Flash',
+      turnCount: 1,
+      totals: { uncachedInput: 2000, cacheRead: 2000, cacheCreation: 0, inputAll: 4000, output: 500, thinking: 0, response: 500, all: 4500 },
+      allTurns: [
+        { modelName: 'Gemini 4 Flash', createdAt: '2026-11-23T09:20:00Z', inputTokens: 2000, cacheReadTokens: 2000, cacheCreationTokens: 0, outputTokens: 500, streamingSec: 1.0, ttftSec: 0.5 },
+      ],
+    },
+    {
+      cascadeId: 'root-2',
+      title: 'Standalone Conversation',
+      isSubagent: false,
+      rootConversationId: '',
+      lastModifiedTime: '2026-11-24T10:30:00Z',
+      modelName: 'Gemini 4 Neon (Medium)',
+      turnCount: 1,
+      totals: { uncachedInput: 3000, cacheRead: 1000, cacheCreation: 0, inputAll: 4000, output: 1000, thinking: 300, response: 700, all: 5000 },
+      allTurns: [
+        { modelName: 'Gemini 4 Neon (Medium)', createdAt: '2026-11-24T10:30:00Z', inputTokens: 3000, cacheReadTokens: 1000, cacheCreationTokens: 0, outputTokens: 1000, streamingSec: 2.5, ttftSec: 1.5 },
+      ],
+    },
+  ];
+
+  for (const range of ['today', '7d', '30d', 'all']) {
+    const agg = aggregateGlobalStats(sampleItems, range);
+    assert.equal(agg.conversations, 2);
+    assert.equal(agg.turns, 4);
+    assert.equal(agg.totals.inputAll, agg.totals.uncachedInput + agg.totals.cacheRead + agg.totals.cacheCreation);
+    assert.equal(agg.totals.all, agg.totals.inputAll + agg.totals.output);
+
+    const timelineSum = agg.timeline.reduce((s, b) => s + b.total, 0);
+    const timelineCostSum = agg.timeline.reduce((s, b) => s + b.cost, 0);
+    assert.equal(timelineSum, agg.totals.all);
+    assert.ok(Math.abs(timelineCostSum - agg.cost.total) < 1e-9);
+
+    const modelsTokSum = agg.models.reduce((s, m) => s + m.tokens, 0);
+    const modelsPctSum = agg.models.reduce((s, m) => s + m.pct, 0);
+    assert.equal(modelsTokSum, agg.totals.all);
+    assert.ok(Math.abs(modelsPctSum - 100) < 1e-6);
+
+    const topTokSum = agg.topConversations.reduce((s, c) => s + c.totalTokens, 0);
+    assert.equal(topTokSum, agg.totals.all);
+  }
+
+  const agg = aggregateGlobalStats(sampleItems, '7d');
+  const mergedRoot = agg.topConversations.find((c) => c.id === 'root-1');
+  assert.equal(mergedRoot.turns, 3);
+  assert.equal(mergedRoot.totalTokens, 16000);
+  // Weighted cache hit rate across root + subagent: 11000 / (3000 + 11000) * 100
+  assert.ok(Math.abs(mergedRoot.cacheHitRate - (11000 / 14000) * 100) < 1e-6);
+});
+
+test('computeTrajectoryMetrics context and multi-model breakdown conserve totals', () => {
+  const catalog = {
+    'M_PLAN': { displayName: 'Gemini 4 Neon (Medium)', maxTokens: 500000 },
+    'M_EXEC': { displayName: 'Gemini 4 Hydrogen (Medium)', maxTokens: 500000 },
+  };
+  const resp = {
+    status: 'CASCADE_RUN_STATUS_IDLE',
+    trajectory: {
+      cascadeId: 'conserve-1',
+      steps: [],
+      generatorMetadata: [
+        {
+          chatModel: {
+            model: 'M_PLAN',
+            modelDisplayName: 'Gemini 4 Neon (Medium)',
+            chatStartMetadata: { contextWindowMetadata: { estimatedTokensUsed: 50000, maxContextTokens: 500000 } },
+            usage: { inputTokens: 1000, cacheReadTokens: 2000, outputTokens: 500 },
+          },
+          plannerConfig: { planModel: 'M_PLAN', planExecuteConfig: { executionModel: 'M_EXEC' } },
+        },
+        {
+          chatModel: {
+            model: 'M_EXEC',
+            modelDisplayName: 'Gemini 4 Hydrogen (Medium)',
+            chatStartMetadata: { contextWindowMetadata: { estimatedTokensUsed: 120000, maxContextTokens: 500000 } },
+            usage: { inputTokens: 2000, cacheReadTokens: 8000, outputTokens: 1500 },
+          },
+        },
+      ],
+    },
+  };
+  const m = computeTrajectoryMetrics(resp, catalog);
+  assert.equal(m.context.used + m.context.free, m.context.max);
+  assert.equal(m.breakdown.dots.length, 100);
+  const mbSum = m.modelBreakdown.reduce((s, x) => s + x.tokens, 0);
+  const mbPctSum = m.modelBreakdown.reduce((s, x) => s + x.pct, 0);
+  assert.equal(mbSum, m.totals.all);
+  assert.ok(Math.abs(mbPctSum - 100) < 1e-6);
+});
