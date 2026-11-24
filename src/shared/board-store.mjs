@@ -125,6 +125,20 @@ export function applyBoardAction(payload, configPath = getDefaultBoardConfigPath
     return writeBoardStore({ initializedAt: store.initializedAt, cards }, configPath).cards;
   }
 
+  if (action === 'unarchive_batch') {
+    const ids = Array.isArray(payload.ids) ? payload.ids : [];
+    for (const rawId of ids) {
+      const id = String(rawId || '').trim();
+      if (!id) continue;
+      const prev = cards[id] || {};
+      const next = { ...prev, updatedAt: now };
+      delete next.archived;
+      delete next.archivedAt;
+      cards[id] = next;
+    }
+    return writeBoardStore({ initializedAt: store.initializedAt, cards }, configPath).cards;
+  }
+
   const id = String(payload.id || '').trim();
   if (!id) return cards;
   const prev = cards[id] || {};

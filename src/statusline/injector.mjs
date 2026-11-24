@@ -56,8 +56,10 @@ export function startCdpInjector({ getMetrics, getQuota, getBoard, onSetBoardSta
                   await Promise.resolve(onSetBoardStatus(payload));
                   await pushMetrics();
                 }
-              } catch {
-                // ignore malformed binding payload
+              } catch (err) {
+                await session
+                  .evalJs(`if (window.__agyCtxBoardActionError) window.__agyCtxBoardActionError(${JSON.stringify(err?.message || '操作同步失败')});`)
+                  .catch(() => {});
               }
             });
           }

@@ -1,5 +1,5 @@
 (() => {
-  const SCRIPT_VERSION = '33';
+  const SCRIPT_VERSION = '37';
   if (window.__agyCtxBarVersion === SCRIPT_VERSION) return 'already-bootstrapped';
   window.__agyCtxBarVersion = SCRIPT_VERSION;
   window.__agyCtxBarBootstrapped = true;
@@ -295,6 +295,10 @@
       }
       #${QUOTA_BAR_ID} .agy-quota-lbl {
         opacity: 0.78;
+      }
+      #${QUOTA_BAR_ID}.agy-light .agy-quota-lbl {
+        color: #575f6d;
+        opacity: 1;
       }
       #${QUOTA_BAR_ID} .agy-quota-val {
         color: var(--foreground, inherit);
@@ -1381,7 +1385,7 @@
   }
 
   // =========================================================================
-  // Workspace Kanban Board (Sidebar Menu + Center Conversation Overlay)
+  // Session Kanban Board (Sidebar Menu + Center Conversation Overlay)
   // =========================================================================
   const WS_MENU_ID = 'agy-ws-menu';
   const WS_VIEW_ID = 'agy-ws-view';
@@ -1395,11 +1399,16 @@
 
   let wsOpen = false;
   let wsQuery = '';
-  let wsScope = 'workspace'; // 'workspace' | 'all'
+  let wsScope = 'all'; // 'workspace' | 'all'
   let wsBoardData = null;
   let wsLastRenderKey = '';
-  let wsLastProjectsKey = '';
   let wsEditingCid = '';
+  let wsBoardOpenedAt = 0;
+  let wsLoadingTimer = null;
+  let wsToastTimer = null;
+  let wsProjectMenuOpen = false;
+  let wsProjectFilter = '';
+  let wsLastFocusedEl = null;
   const wsExpandedGroups = new Set(); // 'week' | 'older' | 'archived'
 
   function ensureWsStyle() {
@@ -1421,7 +1430,7 @@
         height: 16px;
         padding: 0 5px;
         border-radius: 999px;
-        font-size: 10px;
+        font-size: 11px;
         font-weight: 600;
         line-height: 16px;
         text-align: center;
@@ -1433,11 +1442,19 @@
       }
       #${WS_MENU_ID} .ws-menu-badge.is-warn {
         background: rgba(224, 160, 67, 0.18);
-        color: #f0b95e;
+        color: var(--ws-badge-warn-fg, #f0b95e);
       }
       #${WS_MENU_ID} .ws-menu-badge.is-unread {
         background: rgba(79, 209, 175, 0.16);
-        color: #4fd1af;
+        color: var(--ws-badge-unread-fg, #4fd1af);
+      }
+      #${WS_MENU_ID}.agy-light .ws-menu-badge.is-warn {
+        background: rgba(201, 130, 30, 0.14);
+        --ws-badge-warn-fg: #9a5b0c;
+      }
+      #${WS_MENU_ID}.agy-light .ws-menu-badge.is-unread {
+        background: rgba(15, 139, 108, 0.12);
+        --ws-badge-unread-fg: #0b7258;
       }
       #${WS_VIEW_ID} {
         --ws-canvas: #13151a;
@@ -1451,13 +1468,14 @@
         --ws-border: rgba(238, 241, 246, 0.10);
         --ws-border-strong: rgba(238, 241, 246, 0.18);
         --ws-shadow: 0 1px 2px rgba(0, 0, 0, 0.24);
+        --ws-pop-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
         --ws-cobalt: #6b93f2;
         --ws-cobalt-bg: rgba(107, 147, 242, 0.12);
         --ws-emerald: #4fd1af;
         --ws-emerald-bg: rgba(79, 209, 175, 0.11);
-        --ws-amber: #e0a043;
+        --ws-amber: #f0b95e;
         --ws-amber-bg: rgba(224, 160, 67, 0.11);
-        --ws-crimson: #e46464;
+        --ws-crimson: #f28484;
         --ws-crimson-bg: rgba(228, 100, 100, 0.11);
         position: absolute;
         inset: 0;
@@ -1483,6 +1501,7 @@
         --ws-border: rgba(17, 24, 39, 0.09);
         --ws-border-strong: rgba(17, 24, 39, 0.17);
         --ws-shadow: 0 1px 2px rgba(17, 24, 39, 0.05);
+        --ws-pop-shadow: 0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 12px 24px -6px rgba(15, 23, 42, 0.10);
         --ws-cobalt: #3b6ce7;
         --ws-cobalt-bg: rgba(59, 108, 231, 0.09);
         --ws-emerald: #0b7258;
@@ -1509,7 +1528,7 @@
         justify-content: space-between;
         gap: 12px;
         flex-wrap: wrap;
-        padding: 12px 92px 12px 20px;
+        padding: 10px clamp(20px, 7vw, 92px) 10px 20px;
         background: var(--ws-surface);
         border-bottom: 1px solid var(--ws-border);
         flex-shrink: 0;
@@ -1524,10 +1543,10 @@
       #${WS_VIEW_ID} .ws-heading {
         display: inline-flex;
         align-items: center;
-        gap: 8px;
-        font-size: 14px;
+        gap: 7px;
+        font-size: 12.5px;
         font-weight: 600;
-        letter-spacing: -0.01em;
+        letter-spacing: -0.005em;
         color: var(--ws-ink);
         margin: 0;
       }
@@ -1549,7 +1568,7 @@
         padding: 3px 9px;
         border-radius: 6px;
         cursor: pointer;
-        transition: color 0.15s ease, background-color 0.15s ease;
+        transition: color 0.15s ease, background-color 0.15s ease, transform 0.1s ease;
       }
       #${WS_VIEW_ID} .ws-seg-btn:hover {
         color: var(--ws-ink);
@@ -1572,7 +1591,7 @@
       }
       #${WS_VIEW_ID} .ws-search {
         height: 26px;
-        width: 200px;
+        width: 210px;
         padding: 0 8px 0 26px;
         border-radius: 6px;
         border: 1px solid var(--ws-border);
@@ -1606,7 +1625,7 @@
         font-size: 12px;
         font-weight: 500;
         cursor: pointer;
-        transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+        transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease, transform 0.1s ease;
       }
       #${WS_VIEW_ID} .ws-btn:hover {
         border-color: var(--ws-border-strong);
@@ -1621,12 +1640,123 @@
         color: #ffffff;
         opacity: 0.92;
       }
+      #${WS_VIEW_ID} .ws-split-wrap {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+      }
+      #${WS_VIEW_ID} .ws-split-main {
+        border-top-right-radius: 0;
+        border-bottom-right-radius: 0;
+        padding-right: 8px;
+      }
+      #${WS_VIEW_ID} .ws-split-trigger {
+        appearance: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        height: 26px;
+        width: 24px;
+        padding: 0;
+        border: 1px solid var(--ws-cobalt);
+        border-left: 1px solid rgba(255, 255, 255, 0.25);
+        border-radius: 0 7px 7px 0;
+        background: var(--ws-cobalt);
+        color: #ffffff;
+        cursor: pointer;
+        transition: opacity 0.15s ease, transform 0.1s ease;
+      }
+      #${WS_VIEW_ID} .ws-split-trigger:hover {
+        opacity: 0.92;
+      }
+      #${WS_VIEW_ID} .ws-project-popover {
+        position: absolute;
+        top: calc(100% + 6px);
+        right: 0;
+        width: 240px;
+        padding: 6px;
+        border-radius: 10px;
+        background: var(--ws-surface);
+        border: 1px solid var(--ws-border-strong);
+        box-shadow: var(--ws-pop-shadow);
+        z-index: 60;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      #${WS_VIEW_ID} .ws-project-popover[hidden] {
+        display: none;
+      }
+      #${WS_VIEW_ID} .ws-project-filter {
+        width: 100%;
+        height: 26px;
+        padding: 0 8px;
+        border-radius: 6px;
+        border: 1px solid var(--ws-border);
+        background: var(--ws-canvas);
+        color: var(--ws-ink);
+        font-size: 11.5px;
+        outline: none;
+        box-sizing: border-box;
+      }
+      #${WS_VIEW_ID} .ws-project-filter:focus {
+        border-color: var(--ws-cobalt);
+      }
+      #${WS_VIEW_ID} .ws-project-list {
+        max-height: 240px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      #${WS_VIEW_ID} .ws-project-item {
+        appearance: none;
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 6px 8px;
+        border: none;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--ws-ink);
+        font-size: 12px;
+        text-align: left;
+        cursor: pointer;
+        transition: background-color 0.12s ease;
+      }
+      #${WS_VIEW_ID} .ws-project-item:hover {
+        background: var(--ws-surface-alt);
+      }
+      #${WS_VIEW_ID} .ws-project-item-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #${WS_VIEW_ID} .ws-project-item-badge {
+        font-size: 11px;
+        color: var(--ws-cobalt);
+        font-weight: 600;
+        flex-shrink: 0;
+      }
+      #${WS_VIEW_ID} .ws-btn:active,
+      #${WS_VIEW_ID} .ws-seg-btn:active,
+      #${WS_VIEW_ID} .ws-col-action:active,
+      #${WS_VIEW_ID} .ws-op-btn:active,
+      #${WS_VIEW_ID} .ws-split-trigger:active {
+        transform: scale(0.97);
+      }
       #${WS_VIEW_ID} .ws-btn:focus-visible,
       #${WS_VIEW_ID} .ws-seg-btn:focus-visible,
-      #${WS_VIEW_ID} .ws-card:focus-visible,
+      #${WS_VIEW_ID} .ws-split-trigger:focus-visible,
+      #${WS_VIEW_ID} .ws-project-item:focus-visible,
+      #${WS_VIEW_ID} .ws-card-main:focus-visible,
       #${WS_VIEW_ID} .ws-op-btn:focus-visible,
       #${WS_VIEW_ID} .ws-group-toggle:focus-visible,
-      #${WS_VIEW_ID} .ws-col-action:focus-visible {
+      #${WS_VIEW_ID} .ws-col-action:focus-visible,
+      #${WS_VIEW_ID} .ws-notice-btn:focus-visible,
+      #${WS_VIEW_ID} .ws-toast-btn:focus-visible {
         outline: 2px solid var(--ws-cobalt);
         outline-offset: 1px;
       }
@@ -1634,105 +1764,75 @@
         flex: 1;
         min-height: 0;
         overflow: auto;
-        padding: 16px 20px 20px;
+        padding: 14px 20px 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
       }
       #${WS_VIEW_ID} .ws-board-scroll::-webkit-scrollbar,
-      #${WS_VIEW_ID} .ws-col-body::-webkit-scrollbar {
+      #${WS_VIEW_ID} .ws-project-list::-webkit-scrollbar {
         width: 6px;
         height: 6px;
       }
       #${WS_VIEW_ID} .ws-board-scroll::-webkit-scrollbar-thumb,
-      #${WS_VIEW_ID} .ws-col-body::-webkit-scrollbar-thumb {
+      #${WS_VIEW_ID} .ws-project-list::-webkit-scrollbar-thumb {
         background: var(--ws-border-strong);
         border-radius: 999px;
       }
-      #${WS_VIEW_ID} .ws-projects-bar {
+      #${WS_VIEW_ID} .ws-scope-notice {
         display: flex;
         align-items: center;
-        gap: 6px;
-        flex-wrap: wrap;
-        padding: 8px 20px;
-        background: var(--ws-surface);
-        border-bottom: 1px solid var(--ws-border);
+        justify-content: space-between;
+        gap: 10px;
+        padding: 7px 12px;
+        border-radius: 8px;
+        background: var(--ws-cobalt-bg);
+        border: 1px solid color-mix(in srgb, var(--ws-cobalt) 28%, transparent);
+        color: var(--ws-ink);
+        font-size: 12px;
         flex-shrink: 0;
       }
-      #${WS_VIEW_ID} .ws-projects-bar[hidden] {
-        display: none;
-      }
-      #${WS_VIEW_ID} .ws-projects-label {
-        font-size: 11px;
-        font-weight: 500;
-        color: var(--ws-muted);
-        margin-right: 2px;
-        flex-shrink: 0;
-      }
-      #${WS_VIEW_ID} .ws-project-chip {
+      #${WS_VIEW_ID} .ws-notice-btn {
         appearance: none;
+        border: none;
+        background: transparent;
+        color: var(--ws-cobalt);
+        font-size: 11.5px;
+        font-weight: 600;
+        cursor: pointer;
+        padding: 2px 6px;
+        border-radius: 5px;
+      }
+      #${WS_VIEW_ID} .ws-notice-btn:hover {
+        background: var(--ws-surface);
+      }
+      #${WS_VIEW_ID} .ws-empty-lanes-strip {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        flex-shrink: 0;
+      }
+      #${WS_VIEW_ID} .ws-empty-lane-pill {
         display: inline-flex;
         align-items: center;
-        gap: 5px;
-        height: 24px;
-        max-width: 190px;
-        padding: 0 8px;
-        border-radius: 6px;
+        gap: 6px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: var(--ws-surface);
         border: 1px solid var(--ws-border);
-        background: var(--ws-surface-alt);
-        color: var(--ws-secondary);
+        color: var(--ws-muted);
         font-size: 11.5px;
-        font-weight: 500;
-        cursor: pointer;
-        transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
-      }
-      #${WS_VIEW_ID} .ws-project-chip:hover {
-        border-color: var(--ws-cobalt);
-        background: var(--ws-cobalt-bg);
-        color: var(--ws-ink);
-      }
-      #${WS_VIEW_ID} .ws-project-chip.is-active {
-        border-color: color-mix(in srgb, var(--ws-cobalt) 45%, transparent);
-        background: var(--ws-cobalt-bg);
-        color: var(--ws-cobalt);
-      }
-      #${WS_VIEW_ID} .ws-project-chip-name {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-      #${WS_VIEW_ID} .ws-project-chip-plus {
-        opacity: 0.65;
-        flex-shrink: 0;
-      }
-      #${WS_VIEW_ID} .ws-project-chip:hover .ws-project-chip-plus {
-        opacity: 1;
-        color: var(--ws-cobalt);
       }
       #${WS_VIEW_ID} .ws-board {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(225px, 1fr));
-        gap: 10px;
-        min-height: 100%;
-        align-items: start;
-      }
-      @media (max-width: 1080px) {
-        #${WS_VIEW_ID} .ws-board {
-          grid-template-columns: repeat(2, minmax(240px, 1fr));
-        }
-      }
-      @media (max-width: 680px) {
-        #${WS_VIEW_ID} .ws-board {
-          grid-template-columns: 1fr;
-          min-height: auto;
-        }
-        #${WS_VIEW_ID} .ws-col {
-          max-height: none;
-          min-height: 140px;
-        }
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
       }
       #${WS_VIEW_ID} .ws-col {
         display: flex;
         flex-direction: column;
-        min-height: 360px;
-        max-height: calc(100vh - 140px);
+        min-height: 0;
         border-radius: 10px;
         background: var(--ws-col-bg);
         border: 1px solid var(--ws-border);
@@ -1763,7 +1863,7 @@
         padding: 2px 7px;
         border-radius: 6px;
         cursor: pointer;
-        transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+        transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease, transform 0.1s ease;
       }
       #${WS_VIEW_ID} .ws-col-action:hover {
         border-color: var(--ws-border-strong);
@@ -1799,7 +1899,13 @@
         50% { opacity: 0.45; transform: scale(0.85); }
       }
       @media (prefers-reduced-motion: reduce) {
-        #${WS_VIEW_ID} .ws-dot-running { animation: none; }
+        #${WS_VIEW_ID} .ws-dot-running,
+        #${WS_VIEW_ID} .ws-state-pill-dot {
+          animation: none;
+        }
+        #${WS_VIEW_ID} .ws-card:hover {
+          transform: none;
+        }
       }
       #${WS_VIEW_ID} .ws-col-count {
         font-size: 11px;
@@ -1811,13 +1917,15 @@
         border: 1px solid var(--ws-border);
       }
       #${WS_VIEW_ID} .ws-col-body {
-        flex: 1;
-        min-height: 0;
-        overflow-y: auto;
         padding: 8px;
         display: flex;
         flex-direction: column;
         gap: 7px;
+      }
+      #${WS_VIEW_ID} .ws-cards-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(min(275px, 100%), 1fr));
+        gap: 8px;
       }
       #${WS_VIEW_ID} .ws-card {
         position: relative;
@@ -1827,7 +1935,7 @@
         flex-direction: column;
         gap: 7px;
         padding: 10px 11px 10px 12px;
-        border-radius: 9px;
+        border-radius: 10px;
         background: var(--ws-surface);
         border: 1px solid var(--ws-border);
         border-left: 3px solid transparent;
@@ -1862,11 +1970,11 @@
         border-left-color: var(--ws-border);
       }
       #${WS_VIEW_ID} .ws-card.is-archived {
-        opacity: 0.7;
+        opacity: 0.72;
         background: var(--ws-surface-alt);
       }
       #${WS_VIEW_ID} .ws-card.is-archived:hover {
-        opacity: 0.95;
+        opacity: 0.96;
       }
       #${WS_VIEW_ID} .ws-card.is-current {
         border-color: var(--ws-cobalt);
@@ -1884,10 +1992,27 @@
         min-width: 0;
         flex: 1;
       }
-      #${WS_VIEW_ID} .ws-star-mark {
-        color: var(--ws-amber);
-        flex-shrink: 0;
-        margin-top: 2px;
+      #${WS_VIEW_ID} .ws-card-main {
+        appearance: none;
+        border: none;
+        background: transparent;
+        padding: 0;
+        margin: 0;
+        font: inherit;
+        color: inherit;
+        text-align: left;
+        cursor: pointer;
+        width: 100%;
+      }
+      #${WS_VIEW_ID} .ws-card-main::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        border-radius: 10px;
+      }
+      #${WS_VIEW_ID} .ws-card.is-renaming .ws-card-main::after {
+        display: none;
       }
       #${WS_VIEW_ID} .ws-card-title {
         font-size: 12.5px;
@@ -1901,6 +2026,8 @@
         word-break: break-word;
       }
       #${WS_VIEW_ID} .ws-rename-input {
+        position: relative;
+        z-index: 3;
         width: 100%;
         height: 24px;
         padding: 0 6px;
@@ -1914,6 +2041,13 @@
         outline: none;
         box-sizing: border-box;
       }
+      #${WS_VIEW_ID} .ws-rename-hint {
+        position: relative;
+        z-index: 3;
+        margin-top: 3px;
+        font-size: 11px;
+        color: var(--ws-muted);
+      }
       #${WS_VIEW_ID} .ws-card-right {
         display: inline-flex;
         align-items: center;
@@ -1921,6 +2055,8 @@
         flex-shrink: 0;
       }
       #${WS_VIEW_ID} .ws-card-ops {
+        position: relative;
+        z-index: 2;
         display: inline-flex;
         align-items: center;
         gap: 2px;
@@ -1940,7 +2076,11 @@
         cursor: pointer;
         opacity: 0;
         pointer-events: none;
-        transition: opacity 0.12s ease, color 0.12s ease, background-color 0.12s ease, border-color 0.12s ease;
+        transition: opacity 0.12s ease, color 0.12s ease, background-color 0.12s ease, border-color 0.12s ease, transform 0.1s ease;
+      }
+      #${WS_VIEW_ID} .ws-op-btn.is-star-idle {
+        opacity: 0.42;
+        pointer-events: auto;
       }
       #${WS_VIEW_ID} .ws-card:hover .ws-op-btn,
       #${WS_VIEW_ID} .ws-card:focus-within .ws-op-btn,
@@ -1961,7 +2101,7 @@
         align-items: center;
         gap: 4px;
         flex-shrink: 0;
-        font-size: 10px;
+        font-size: 11px;
         font-weight: 600;
         padding: 1px 6px;
         border-radius: 999px;
@@ -2001,7 +2141,7 @@
       }
       #${WS_VIEW_ID} .ws-current-pill {
         flex-shrink: 0;
-        font-size: 10px;
+        font-size: 11px;
         font-weight: 600;
         padding: 1px 6px;
         border-radius: 999px;
@@ -2019,7 +2159,8 @@
       #${WS_VIEW_ID} .ws-card-tags {
         display: inline-flex;
         align-items: center;
-        gap: 6px;
+        flex-wrap: wrap;
+        gap: 5px;
         min-width: 0;
         flex: 1;
       }
@@ -2028,7 +2169,7 @@
         align-items: center;
         gap: 3px;
         min-width: 0;
-        max-width: 120px;
+        max-width: 130px;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -2036,10 +2177,26 @@
         border-radius: 5px;
         background: var(--ws-surface-alt);
         color: var(--ws-secondary);
-        font-size: 10.5px;
+        font-size: 11px;
       }
       #${WS_VIEW_ID} .ws-project-tag {
-        max-width: 150px;
+        max-width: 160px;
+      }
+      #${WS_VIEW_ID} .ws-tag.is-ctx-warn {
+        background: var(--ws-amber-bg);
+        color: var(--ws-amber);
+        font-weight: 600;
+      }
+      #${WS_VIEW_ID} .ws-tag.is-ctx-crit {
+        background: var(--ws-crimson-bg);
+        color: var(--ws-crimson);
+        font-weight: 600;
+      }
+      #${WS_VIEW_ID} .ws-group-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
       }
       #${WS_VIEW_ID} .ws-group-label {
         display: flex;
@@ -2055,7 +2212,7 @@
       }
       #${WS_VIEW_ID} .ws-group-toggle {
         appearance: none;
-        width: 100%;
+        flex: 1;
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -2081,11 +2238,83 @@
         align-items: center;
         gap: 6px;
       }
-      #${WS_VIEW_ID} .ws-empty {
-        padding: 28px 12px;
+      #${WS_VIEW_ID} .ws-center-state {
+        margin: 48px auto;
+        max-width: 420px;
+        padding: 24px 20px;
+        border-radius: 10px;
+        background: var(--ws-surface);
+        border: 1px solid var(--ws-border);
         text-align: center;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        color: var(--ws-secondary);
+      }
+      #${WS_VIEW_ID} .ws-center-state-title {
+        font-size: 12.5px;
+        font-weight: 600;
+        color: var(--ws-ink);
+      }
+      #${WS_VIEW_ID} .ws-skeleton-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      #${WS_VIEW_ID} .ws-skeleton-col {
+        height: 120px;
+        border-radius: 10px;
+        background: var(--ws-col-bg);
+        border: 1px solid var(--ws-border);
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      #${WS_VIEW_ID} .ws-skeleton-bar {
+        height: 44px;
+        border-radius: 8px;
+        background: var(--ws-surface-alt);
+        opacity: 0.7;
+      }
+      #${WS_VIEW_ID} .ws-toast {
+        position: absolute;
+        left: 50%;
+        bottom: 18px;
+        transform: translateX(-50%);
+        z-index: 70;
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 12px;
+        border-radius: 8px;
+        background: var(--ws-surface);
+        border: 1px solid var(--ws-border-strong);
+        box-shadow: var(--ws-pop-shadow);
+        color: var(--ws-ink);
+        font-size: 12px;
+      }
+      #${WS_VIEW_ID} .ws-toast[hidden] {
+        display: none;
+      }
+      #${WS_VIEW_ID} .ws-toast.is-error {
+        border-color: color-mix(in srgb, var(--ws-crimson) 45%, transparent);
+        color: var(--ws-crimson);
+      }
+      #${WS_VIEW_ID} .ws-toast-btn {
+        appearance: none;
+        border: 1px solid var(--ws-border);
+        background: var(--ws-surface-alt);
+        color: var(--ws-cobalt);
         font-size: 11.5px;
-        color: var(--ws-muted);
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      #${WS_VIEW_ID} .ws-toast-btn:hover {
+        border-color: var(--ws-cobalt);
       }
     `;
     document.head.appendChild(style);
@@ -2246,44 +2475,87 @@
     }
   }
 
-  function renderWorkspaceProjectsBar(view) {
-    const bar = view?.querySelector('[data-role="ws-projects"]');
-    if (!bar) return;
+  function hideWsToast() {
+    if (wsToastTimer) {
+      clearTimeout(wsToastTimer);
+      wsToastTimer = null;
+    }
+    const toast = document.querySelector(`#${WS_VIEW_ID} [data-role="ws-toast"]`);
+    if (toast) {
+      toast.hidden = true;
+      toast.classList.remove('is-error');
+      toast.innerHTML = '';
+    }
+  }
+
+  function showWsToast(message, options = {}) {
+    const view = document.getElementById(WS_VIEW_ID);
+    const toast = view?.querySelector('[data-role="ws-toast"]');
+    if (!toast) return;
+    if (wsToastTimer) {
+      clearTimeout(wsToastTimer);
+      wsToastTimer = null;
+    }
+    toast.classList.toggle('is-error', options.tone === 'error');
+    const undoHtml = options.undoLabel
+      ? `<button type="button" class="ws-toast-btn" data-action="toast-undo">${escapeHtml(options.undoLabel)}</button>`
+      : '';
+    toast.innerHTML = `<span>${escapeHtml(message)}</span>${undoHtml}`;
+    toast.hidden = false;
+
+    const undoBtn = toast.querySelector('[data-action="toast-undo"]');
+    if (undoBtn && typeof options.onUndo === 'function') {
+      undoBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        hideWsToast();
+        options.onUndo();
+      });
+    }
+
+    const duration = options.durationMs ?? 5000;
+    wsToastTimer = setTimeout(() => {
+      hideWsToast();
+    }, duration);
+  }
+
+  function renderProjectPopoverList(view) {
+    const listEl = view?.querySelector('[data-role="ws-project-list"]');
+    if (!listEl) return;
     const projects = collectSidebarProjects();
     let currentProjectId = '';
     try {
       currentProjectId = new URL(location.href).searchParams.get('project') || '';
     } catch {}
-    const key = JSON.stringify([currentProjectId, projects.map((p) => `${p.id}:${p.name}`)]);
-    if (key === wsLastProjectsKey) return;
-    wsLastProjectsKey = key;
+    const q = wsProjectFilter.trim().toLowerCase();
+    const sorted = projects.slice().sort((a, b) => {
+      if (a.id === currentProjectId && b.id !== currentProjectId) return -1;
+      if (b.id === currentProjectId && a.id !== currentProjectId) return 1;
+      return 0;
+    });
+    const matched = q
+      ? sorted.filter((p) => p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q))
+      : sorted;
 
-    if (!projects.length) {
-      bar.hidden = true;
-      bar.innerHTML = '';
+    if (!matched.length) {
+      listEl.innerHTML = '<div style="padding:10px 8px;text-align:center;font-size:11.5px;color:var(--ws-muted);">无匹配项目</div>';
       return;
     }
 
-    bar.hidden = false;
-    bar.innerHTML = `
-      <span class="ws-projects-label">快速新建</span>
-      ${projects.map((p) => `
-        <button type="button" class="ws-project-chip ${p.id === currentProjectId ? 'is-active' : ''}" data-project-id="${escapeHtml(p.id)}" data-project-href="${escapeHtml(p.href)}" title="基于 ${escapeHtml(p.name)} 创建新会话">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;" aria-hidden="true">
-            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-          </svg>
-          <span class="ws-project-chip-name">${escapeHtml(p.name)}</span>
-          <svg class="ws-project-chip-plus" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <line x1="12" y1="5" x2="12" y2="19"></line>
-            <line x1="5" y1="12" x2="19" y2="12"></line>
-          </svg>
-        </button>
-      `).join('')}
-    `;
+    listEl.innerHTML = matched
+      .map(
+        (p) => `
+          <button type="button" class="ws-project-item" role="menuitem" data-project-id="${escapeHtml(p.id)}" data-project-href="${escapeHtml(p.href)}">
+            <span class="ws-project-item-name">${escapeHtml(p.name)}</span>
+            ${p.id === currentProjectId ? '<span class="ws-project-item-badge">当前</span>' : ''}
+          </button>
+        `,
+      )
+      .join('');
 
-    bar.querySelectorAll('.ws-project-chip').forEach((btn) => {
+    listEl.querySelectorAll('.ws-project-item').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
+        setProjectMenuOpen(false);
         const pid = btn.dataset.projectId || '';
         const href = btn.dataset.projectHref || '';
         if (pid) triggerNewConversationInProject(pid, href);
@@ -2291,48 +2563,77 @@
     });
   }
 
+  function setProjectMenuOpen(next) {
+    const view = document.getElementById(WS_VIEW_ID);
+    const pop = view?.querySelector('[data-role="ws-project-popover"]');
+    const trigger = view?.querySelector('[data-action="new-menu"]');
+    wsProjectMenuOpen = Boolean(next);
+    if (trigger) trigger.setAttribute('aria-expanded', String(wsProjectMenuOpen));
+    if (!pop) return;
+    pop.hidden = !wsProjectMenuOpen;
+    if (wsProjectMenuOpen) {
+      wsProjectFilter = '';
+      const filterInput = pop.querySelector('.ws-project-filter');
+      if (filterInput) filterInput.value = '';
+      renderProjectPopoverList(view);
+      requestAnimationFrame(() => filterInput?.focus());
+    }
+  }
+
   function buildWsShell(view) {
-    wsLastProjectsKey = '';
     view.innerHTML = `
       <div class="ws-topbar">
         <div class="ws-topbar-left">
           <h2 class="ws-heading">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <rect x="3" y="3" width="7" height="7" rx="1"></rect>
               <rect x="14" y="3" width="7" height="7" rx="1"></rect>
               <rect x="14" y="14" width="7" height="7" rx="1"></rect>
               <rect x="3" y="14" width="7" height="7" rx="1"></rect>
             </svg>
-            <span>工作区看板</span>
+            <span>会话看板</span>
           </h2>
-          <div class="ws-seg" role="group" aria-label="工作区范围">
+          <div class="ws-seg" role="group" aria-label="会话范围">
             <button type="button" class="ws-seg-btn" data-scope="workspace" aria-pressed="${wsScope === 'workspace'}">当前项目</button>
-            <button type="button" class="ws-seg-btn" data-scope="all" aria-pressed="${wsScope === 'all'}">全部</button>
+            <button type="button" class="ws-seg-btn" data-scope="all" aria-pressed="${wsScope === 'all'}">全部项目</button>
           </div>
           <label class="ws-search-wrap">
             <svg class="ws-search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <circle cx="11" cy="11" r="8"></circle>
               <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
             </svg>
-            <input class="ws-search" type="search" placeholder="筛选会话、分支或项目…" aria-label="筛选会话">
+            <input class="ws-search" type="search" placeholder="筛选会话、分支或项目 (按 / 聚焦)" aria-label="筛选会话">
           </label>
         </div>
         <div class="ws-topbar-right">
           <span class="ws-total num" data-role="ws-total"></span>
-          <button class="ws-btn ws-btn-primary" data-action="new" type="button">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-            <span>新建对话</span>
-          </button>
+          <div class="ws-split-wrap">
+            <button class="ws-btn ws-btn-primary ws-split-main" data-action="new" type="button">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              <span>新建对话</span>
+            </button>
+            <button class="ws-split-trigger" data-action="new-menu" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="选择项目新建对话" title="选择项目新建对话">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </button>
+            <div class="ws-project-popover" data-role="ws-project-popover" role="menu" aria-label="选择项目新建对话" hidden>
+              <input class="ws-project-filter" type="search" placeholder="搜索项目名…" aria-label="搜索项目名">
+              <div class="ws-project-list" data-role="ws-project-list"></div>
+            </div>
+          </div>
           <button class="ws-btn" data-action="close" type="button">返回对话</button>
         </div>
       </div>
-      <div class="ws-projects-bar" data-role="ws-projects" hidden></div>
-      <div class="ws-board-scroll">
+      <div class="ws-board-scroll" data-role="ws-scroll">
+        <div class="ws-scope-notice" data-role="ws-scope-notice" hidden></div>
+        <div class="ws-empty-lanes-strip" data-role="ws-empty-strip" hidden></div>
         <div class="ws-board" data-role="ws-board"></div>
       </div>
+      <div class="ws-toast" data-role="ws-toast" role="status" aria-live="polite" hidden></div>
     `;
 
     view.querySelectorAll('.ws-seg-btn[data-scope]').forEach((btn) => {
@@ -2358,20 +2659,46 @@
       });
     }
 
+    const projectFilterInput = view.querySelector('.ws-project-filter');
+    if (projectFilterInput) {
+      projectFilterInput.addEventListener('input', () => {
+        wsProjectFilter = projectFilterInput.value || '';
+        renderProjectPopoverList(view);
+      });
+    }
+
     view.querySelector('[data-action="new"]')?.addEventListener('click', triggerNewConversation);
+    view.querySelector('[data-action="new-menu"]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setProjectMenuOpen(!wsProjectMenuOpen);
+    });
     view.querySelector('[data-action="close"]')?.addEventListener('click', () => setWorkspaceOpen(false));
+    view.addEventListener('click', (e) => {
+      if (wsProjectMenuOpen && e.target instanceof Element && !e.target.closest('.ws-split-wrap')) {
+        setProjectMenuOpen(false);
+      }
+    });
   }
 
   const wsPendingActions = new Map(); // cid -> { until, patch }
 
   function sendBoardAction(payload) {
-    if (typeof window.__agyCtxSetBoardStatus !== 'function') return;
+    if (typeof window.__agyCtxSetBoardStatus !== 'function') {
+      showWsToast('本地连接未就绪，操作未能同步', { tone: 'error' });
+      return false;
+    }
     try {
       window.__agyCtxSetBoardStatus(JSON.stringify(payload));
+      return true;
     } catch {
-      // ignore binding error
+      showWsToast('操作发送失败，稍后将恢复原状态', { tone: 'error' });
+      return false;
     }
   }
+
+  window.__agyCtxBoardActionError = (msg) => {
+    showWsToast(msg || '操作同步失败，已恢复原状态', { tone: 'error' });
+  };
 
   function applyPendingActionsToData(boardData) {
     if (!boardData || !Array.isArray(boardData.conversations) || wsPendingActions.size === 0) return;
@@ -2398,22 +2725,35 @@
   function performBoardAction(payload) {
     if (!payload || typeof payload !== 'object') return;
     const action = payload.action || '';
-    if (action === 'archive_batch' && Array.isArray(payload.ids)) {
+    if ((action === 'archive_batch' || action === 'unarchive_batch') && Array.isArray(payload.ids)) {
       const idSet = new Set(payload.ids);
       const nowIso = new Date().toISOString();
+      const toArchived = action === 'archive_batch';
       if (Array.isArray(wsBoardData?.conversations)) {
         for (const item of wsBoardData.conversations) {
           if (!idSet.has(item.id)) continue;
-          item.archived = true;
-          item.isUnread = false;
-          item.seenAt = nowIso;
-          setPendingPatch(item.id, { archived: true, isUnread: false, seenAt: nowIso });
+          if (toArchived) {
+            item.archived = true;
+            item.isUnread = false;
+            item.seenAt = nowIso;
+            setPendingPatch(item.id, { archived: true, isUnread: false, seenAt: nowIso });
+          } else {
+            item.archived = false;
+            setPendingPatch(item.id, { archived: false });
+          }
         }
       }
       wsLastRenderKey = '';
       renderWorkspaceBoard();
       updateWorkspaceMenuBadge();
-      sendBoardAction(payload);
+      const ok = sendBoardAction(payload);
+      if (ok && toArchived && payload.ids.length > 0 && !payload.silentToast) {
+        const undoIds = payload.ids.slice();
+        showWsToast(`已归档 ${undoIds.length} 条已读会话`, {
+          undoLabel: '撤销',
+          onUndo: () => performBoardAction({ action: 'unarchive_batch', ids: undoIds, silentToast: true }),
+        });
+      }
       return;
     }
 
@@ -2452,7 +2792,13 @@
     wsLastRenderKey = '';
     renderWorkspaceBoard();
     updateWorkspaceMenuBadge();
-    sendBoardAction(payload);
+    const ok = sendBoardAction(payload);
+    if (ok && action === 'archive' && payload.value === true && !payload.silentToast) {
+      showWsToast('已归档该会话', {
+        undoLabel: '撤销',
+        onUndo: () => performBoardAction({ action: 'archive', id: cid, value: false, silentToast: true }),
+      });
+    }
   }
 
   function markConversationSeen(cid) {
@@ -2467,8 +2813,13 @@
   function getScopedBoardItems(q) {
     const list = Array.isArray(wsBoardData?.conversations) ? wsBoardData.conversations : [];
     const hasCurrentWs = list.some((i) => i.isCurrentWorkspace);
+    let fallbackReason = '';
+    if (wsScope === 'workspace') {
+      if (q && hasCurrentWs) fallbackReason = 'search';
+      else if (!hasCurrentWs && list.length > 0) fallbackReason = 'empty-workspace';
+    }
     const useWorkspaceScope = wsScope === 'workspace' && hasCurrentWs && !q;
-    return list.filter((item) => {
+    const items = list.filter((item) => {
       if (useWorkspaceScope && !item.isCurrentWorkspace) return false;
       if (!q) return true;
       return (
@@ -2478,17 +2829,23 @@
         String(item.id || '').toLowerCase().includes(q)
       );
     });
+    return { items, fallbackReason };
   }
 
-  function computeBoardRenderKey(filtered, q, currentCid) {
+  function computeBoardRenderKey(filtered, q, currentCid, fallbackReason, loadingElapsed) {
+    const stateTag = wsBoardData === null ? (loadingElapsed ? 'timeout' : 'loading') : wsBoardData?.error ? 'error' : 'ready';
     return JSON.stringify([
+      stateTag,
       q,
       wsScope,
+      fallbackReason,
       currentCid,
       Array.from(wsExpandedGroups).sort(),
-      filtered.map((i) =>
-        `${i.id}:${i.summary}:${i.boardStatus}:${i.starred ? 1 : 0}:${i.archived ? 1 : 0}:${i.isUnread ? 1 : 0}:${i.stepCount}:${i.subagentCount}:${i.lastModifiedTime}`,
-      ),
+      filtered.map((i) => {
+        const m = metricsByCid.get(i.id);
+        const pct = typeof m?.context?.pct === 'number' ? m.context.pct : '';
+        return `${i.id}:${i.summary}:${i.boardStatus}:${i.starred ? 1 : 0}:${i.archived ? 1 : 0}:${i.isUnread ? 1 : 0}:${i.subagentCount}:${i.lastModifiedTime}:${pct}`;
+      }),
     ]);
   }
 
@@ -2507,7 +2864,9 @@
 
   function updateWorkspaceMenuBadge() {
     const menu = document.getElementById(WS_MENU_ID);
-    const badge = menu?.querySelector('.ws-menu-badge');
+    if (!menu) return;
+    menu.classList.toggle('agy-light', isLightSurface());
+    const badge = menu.querySelector('.ws-menu-badge');
     if (!badge) return;
     const list = Array.isArray(wsBoardData?.conversations) ? wsBoardData.conversations : [];
     const currentCid = getCurrentCid();
@@ -2526,10 +2885,12 @@
     badge.classList.remove('is-visible', 'is-warn', 'is-unread');
     if (total <= 0) {
       badge.textContent = '';
+      menu.setAttribute('aria-label', '会话看板');
       return;
     }
     badge.textContent = total > 99 ? '99+' : String(total);
     badge.classList.add('is-visible', attentionCount > 0 ? 'is-warn' : 'is-unread');
+    menu.setAttribute('aria-label', `会话看板，${total} 条待处理或未读`);
   }
 
   function renderWorkspaceBoard() {
@@ -2540,15 +2901,90 @@
     if (!view.querySelector('[data-role="ws-board"]')) {
       buildWsShell(view);
     }
-    renderWorkspaceProjectsBar(view);
 
     const currentCid = getCurrentCid();
     const q = wsQuery.trim().toLowerCase();
-    const filtered = getScopedBoardItems(q);
+    const { items: filtered, fallbackReason } = getScopedBoardItems(q);
+    const loadingElapsed = wsBoardData === null && wsBoardOpenedAt > 0 && Date.now() - wsBoardOpenedAt >= 4000;
 
-    const renderKey = computeBoardRenderKey(filtered, q, currentCid);
+    const renderKey = computeBoardRenderKey(filtered, q, currentCid, fallbackReason, loadingElapsed);
     if (renderKey === wsLastRenderKey) return;
     wsLastRenderKey = renderKey;
+
+    const noticeEl = view.querySelector('[data-role="ws-scope-notice"]');
+    const stripEl = view.querySelector('[data-role="ws-empty-strip"]');
+    const boardEl = view.querySelector('[data-role="ws-board"]');
+    const totalEl = view.querySelector('[data-role="ws-total"]');
+    if (!boardEl) return;
+
+    if (wsBoardData === null) {
+      if (noticeEl) noticeEl.hidden = true;
+      if (stripEl) stripEl.hidden = true;
+      if (totalEl) totalEl.textContent = '加载中…';
+      if (loadingElapsed) {
+        boardEl.innerHTML = `
+          <div class="ws-center-state">
+            <div class="ws-center-state-title">暂未收到本地会话数据</div>
+            <div>请确认 Antigravity 后台语言服务正常运行，稍后会自动同步。</div>
+          </div>
+        `;
+      } else {
+        boardEl.innerHTML = `
+          <div class="ws-skeleton-grid" aria-label="正在加载会话看板">
+            <div class="ws-skeleton-col"><div class="ws-skeleton-bar"></div><div class="ws-skeleton-bar"></div></div>
+            <div class="ws-skeleton-col"><div class="ws-skeleton-bar"></div><div class="ws-skeleton-bar"></div></div>
+          </div>
+        `;
+      }
+      return;
+    }
+
+    if (wsBoardData?.error) {
+      if (noticeEl) noticeEl.hidden = true;
+      if (stripEl) stripEl.hidden = true;
+      if (totalEl) totalEl.textContent = '';
+      boardEl.innerHTML = `
+        <div class="ws-center-state">
+          <div class="ws-center-state-title">会话数据读取失败</div>
+          <div>${escapeHtml(wsBoardData.message || wsBoardData.error)}</div>
+        </div>
+      `;
+      return;
+    }
+
+    if (noticeEl) {
+      if (fallbackReason === 'search') {
+        noticeEl.hidden = false;
+        noticeEl.innerHTML = `
+          <span>当前搜索已自动覆盖全部项目中的会话</span>
+          <button type="button" class="ws-notice-btn" data-action="clear-search">清空搜索</button>
+        `;
+      } else if (fallbackReason === 'empty-workspace') {
+        noticeEl.hidden = false;
+        noticeEl.innerHTML = `
+          <span>未匹配到当前项目会话，已展示全部项目</span>
+          <button type="button" class="ws-notice-btn" data-action="switch-all">切换至全部项目</button>
+        `;
+      } else {
+        noticeEl.hidden = true;
+        noticeEl.innerHTML = '';
+      }
+      noticeEl.querySelector('[data-action="clear-search"]')?.addEventListener('click', () => {
+        wsQuery = '';
+        const input = view.querySelector('.ws-search');
+        if (input) input.value = '';
+        wsLastRenderKey = '';
+        renderWorkspaceBoard();
+      });
+      noticeEl.querySelector('[data-action="switch-all"]')?.addEventListener('click', () => {
+        wsScope = 'all';
+        view.querySelectorAll('.ws-seg-btn[data-scope]').forEach((b) => {
+          b.setAttribute('aria-pressed', String(b.dataset.scope === 'all'));
+        });
+        wsLastRenderKey = '';
+        renderWorkspaceBoard();
+      });
+    }
 
     const starredItems = [];
     const attentionItems = [];
@@ -2621,7 +3057,6 @@
       doneGroups[key] = sortBoardCards(doneGroups[key]);
     }
 
-    const totalEl = view.querySelector('[data-role="ws-total"]');
     if (totalEl) {
       const activeDoneCount = doneItems.length - doneGroups.archived.length;
       const parts = [];
@@ -2632,8 +3067,37 @@
       totalEl.textContent = parts.join(' · ');
     }
 
-    const boardEl = view.querySelector('[data-role="ws-board"]');
-    if (!boardEl) return;
+    if (q && filtered.length === 0) {
+      if (stripEl) stripEl.hidden = true;
+      boardEl.innerHTML = `
+        <div class="ws-center-state">
+          <div class="ws-center-state-title">未找到包含“${escapeHtml(wsQuery.trim())}”的会话</div>
+          <div>可以尝试搜索项目名、分支名或清空筛选条件。</div>
+          <button type="button" class="ws-btn" data-action="clear-search-empty">清空筛选</button>
+        </div>
+      `;
+      boardEl.querySelector('[data-action="clear-search-empty"]')?.addEventListener('click', () => {
+        wsQuery = '';
+        const input = view.querySelector('.ws-search');
+        if (input) input.value = '';
+        wsLastRenderKey = '';
+        renderWorkspaceBoard();
+      });
+      return;
+    }
+
+    if (!q && filtered.length === 0) {
+      if (stripEl) stripEl.hidden = true;
+      boardEl.innerHTML = `
+        <div class="ws-center-state">
+          <div class="ws-center-state-title">暂无会话记录</div>
+          <div>点击右上角或下方按钮即可发起新的对话。</div>
+          <button type="button" class="ws-btn ws-btn-primary" data-action="empty-new">新建对话</button>
+        </div>
+      `;
+      boardEl.querySelector('[data-action="empty-new"]')?.addEventListener('click', triggerNewConversation);
+      return;
+    }
 
     function renderCardHtml(item, laneKey) {
       const isCurrent = currentCid && item.id === currentCid;
@@ -2661,6 +3125,12 @@
       }
 
       const tagParts = [];
+      const cachedMetric = metricsByCid.get(item.id);
+      const ctxPct = typeof cachedMetric?.context?.pct === 'number' ? Math.round(cachedMetric.context.pct) : null;
+      if (ctxPct !== null) {
+        const ctxCls = ctxPct >= 90 ? 'is-ctx-crit' : ctxPct >= 75 ? 'is-ctx-warn' : '';
+        tagParts.push(`<span class="ws-tag num ${ctxCls}" title="上下文窗口占用 ${ctxPct}%">上下文 ${ctxPct}%</span>`);
+      }
       if (item.workspaceName) {
         tagParts.push(
           `<span class="ws-tag ws-project-tag" title="项目：${escapeHtml(item.workspaceName)}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg><span class="truncate">${escapeHtml(item.workspaceName)}</span></span>`,
@@ -2674,12 +3144,9 @@
       if (item.subagentCount > 0) {
         tagParts.push(`<span class="ws-tag num">${item.subagentCount} 子代理</span>`);
       }
-      if (item.stepCount > 0 && tagParts.length < 2) {
-        tagParts.push(`<span class="ws-tag num">${item.stepCount} 步</span>`);
-      }
 
       const starBtnHtml = `
-        <button type="button" class="ws-op-btn ${item.starred ? 'is-starred is-always' : ''}" data-op="star" data-cid="${escapeHtml(item.id)}" data-next="${item.starred ? '0' : '1'}" aria-label="${item.starred ? '取消关注' : '关注此会话'}" title="${item.starred ? '取消关注' : '关注置顶'}">
+        <button type="button" class="ws-op-btn ${item.starred ? 'is-starred is-always' : 'is-star-idle'}" data-op="star" data-cid="${escapeHtml(item.id)}" data-next="${item.starred ? '0' : '1'}" aria-label="${item.starred ? '取消关注' : '关注此会话'}" title="${item.starred ? '取消关注' : '关注置顶'}">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="${item.starred ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
           </svg>
@@ -2709,9 +3176,11 @@
           `;
         } else {
           doneOpsHtml += `
-            <button type="button" class="ws-op-btn" data-op="archive" data-cid="${escapeHtml(item.id)}" aria-label="归档" title="归档此会话">
+            <button type="button" class="ws-op-btn" data-op="archive" data-cid="${escapeHtml(item.id)}" aria-label="归档会话" title="归档此会话">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <polyline points="20 6 9 17 4 12"></polyline>
+                <polyline points="21 8 21 21 3 21 3 8"></polyline>
+                <rect x="1" y="3" width="22" height="5"></rect>
+                <line x1="10" y1="12" x2="14" y2="12"></line>
               </svg>
             </button>
           `;
@@ -2728,10 +3197,12 @@
       `;
 
       return `
-        <div class="ws-card ${cardToneClass} ${isCurrent ? 'is-current' : ''}" role="button" tabindex="0" data-cid="${escapeHtml(item.id)}" data-col="${escapeHtml(laneKey)}" title="${escapeHtml(item.summary)}">
+        <article class="ws-card ${cardToneClass} ${isCurrent ? 'is-current' : ''}" data-cid="${escapeHtml(item.id)}" data-col="${escapeHtml(laneKey)}" title="${escapeHtml(item.summary)}">
           <div class="ws-card-top">
             <div class="ws-card-title-wrap">
-              <div class="ws-card-title">${escapeHtml(item.summary)}</div>
+              <button type="button" class="ws-card-main" data-cid="${escapeHtml(item.id)}">
+                <span class="ws-card-title">${escapeHtml(item.summary)}</span>
+              </button>
             </div>
             <div class="ws-card-right">
               <div class="ws-card-ops">
@@ -2747,115 +3218,153 @@
             <div class="ws-card-tags">${tagParts.join('')}</div>
             <span class="num">${escapeHtml(timeLabel)}</span>
           </div>
-        </div>
+        </article>
       `;
     }
 
     function renderCollapsibleGroup(groupKey, label, items) {
       if (!items.length) return '';
       const expanded = wsExpandedGroups.has(groupKey);
+      const restoreBtn = groupKey === 'archived' && expanded
+        ? '<button type="button" class="ws-col-action" data-action="unarchive-all">全部恢复</button>'
+        : '';
       const header = `
-        <button type="button" class="ws-group-toggle" data-group="${groupKey}" aria-expanded="${expanded}">
-          <span class="ws-group-toggle-left">
-            <span>${expanded ? '▾' : '▸'}</span>
-            <span>${label}</span>
-          </span>
-          <span class="num">${items.length}</span>
-        </button>
+        <div class="ws-group-head">
+          <button type="button" class="ws-group-toggle" data-group="${groupKey}" aria-expanded="${expanded}">
+            <span class="ws-group-toggle-left">
+              <span>${expanded ? '▾' : '▸'}</span>
+              <span>${label}</span>
+            </span>
+            <span class="num">${items.length}</span>
+          </button>
+          ${restoreBtn}
+        </div>
       `;
       if (!expanded) return header;
-      return header + items.map((item) => renderCardHtml(item, 'done')).join('');
+      return `${header}<div class="ws-cards-grid">${items.map((item) => renderCardHtml(item, 'done')).join('')}</div>`;
     }
 
     function renderDoneBodyHtml() {
       if (!doneItems.length) {
-        return `<div class="ws-empty">${q ? '无匹配当前筛选条件的会话' : '暂无已完成的会话'}</div>`;
+        return '';
       }
       if (q) {
-        return sortBoardCards(doneItems).map((item) => renderCardHtml(item, 'done')).join('');
+        return `<div class="ws-cards-grid">${sortBoardCards(doneItems).map((item) => renderCardHtml(item, 'done')).join('')}</div>`;
       }
       const chunks = [];
       if (doneGroups.unread.length) {
         chunks.push(`<div class="ws-group-label is-unread"><span>待验收</span><span class="num">${doneGroups.unread.length}</span></div>`);
-        chunks.push(doneGroups.unread.map((item) => renderCardHtml(item, 'done')).join(''));
+        chunks.push(`<div class="ws-cards-grid">${doneGroups.unread.map((item) => renderCardHtml(item, 'done')).join('')}</div>`);
       }
       if (doneGroups.today.length) {
         if (doneGroups.unread.length) {
           chunks.push(`<div class="ws-group-label"><span>今天</span><span class="num">${doneGroups.today.length}</span></div>`);
         }
-        chunks.push(doneGroups.today.map((item) => renderCardHtml(item, 'done')).join(''));
+        chunks.push(`<div class="ws-cards-grid">${doneGroups.today.map((item) => renderCardHtml(item, 'done')).join('')}</div>`);
       }
       chunks.push(renderCollapsibleGroup('week', '近 7 天', doneGroups.week));
       chunks.push(renderCollapsibleGroup('older', '更早', doneGroups.older));
       chunks.push(renderCollapsibleGroup('archived', '已归档', doneGroups.archived));
-      const html = chunks.filter(Boolean).join('');
-      return html || '<div class="ws-empty">暂无已完成的会话</div>';
+      return chunks.filter(Boolean).join('');
     }
 
     const hasWaiting = sortedAttention.some((i) => i.boardStatus === 'waiting');
     const hasError = sortedAttention.some((i) => i.boardStatus === 'error');
     const attentionDotClass = hasError && !hasWaiting ? 'ws-dot ws-dot-attention is-error-only' : 'ws-dot ws-dot-attention';
-
     const starHeadIconHtml = '<svg class="ws-star-head" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>';
 
     const laneHtmlMap = {
       starred: {
         iconHtml: starHeadIconHtml,
         count: sortedStarred.length,
+        totalCount: sortedStarred.length,
         headAction: '',
-        bodyHtml: sortedStarred.length
-          ? sortedStarred.map((item) => renderCardHtml(item, 'starred')).join('')
-          : `<div class="ws-empty">${q ? '无匹配当前筛选条件的会话' : '点击卡片星标即可集中关注'}</div>`,
+        bodyHtml: `<div class="ws-cards-grid">${sortedStarred.map((item) => renderCardHtml(item, 'starred')).join('')}</div>`,
       },
       attention: {
         iconHtml: `<span class="${attentionDotClass}" aria-hidden="true"></span>`,
         count: sortedAttention.length,
+        totalCount: sortedAttention.length,
         headAction: '',
-        bodyHtml: sortedAttention.length
-          ? sortedAttention.map((item) => renderCardHtml(item, 'attention')).join('')
-          : `<div class="ws-empty">${q ? '无匹配当前筛选条件的会话' : '暂无待确认或异常的会话'}</div>`,
+        bodyHtml: `<div class="ws-cards-grid">${sortedAttention.map((item) => renderCardHtml(item, 'attention')).join('')}</div>`,
       },
       running: {
         iconHtml: '<span class="ws-dot ws-dot-running" aria-hidden="true"></span>',
         count: sortedRunning.length,
+        totalCount: sortedRunning.length,
         headAction: '',
-        bodyHtml: sortedRunning.length
-          ? sortedRunning.map((item) => renderCardHtml(item, 'running')).join('')
-          : `<div class="ws-empty">${q ? '无匹配当前筛选条件的会话' : '当前没有运行中的会话'}</div>`,
+        bodyHtml: `<div class="ws-cards-grid">${sortedRunning.map((item) => renderCardHtml(item, 'running')).join('')}</div>`,
       },
       done: {
         iconHtml: '<span class="ws-dot ws-dot-done" aria-hidden="true"></span>',
         count: doneItems.length - doneGroups.archived.length,
+        totalCount: doneItems.length,
         headAction: batchArchivableIds.length > 0 && !q
-          ? '<button type="button" class="ws-col-action" data-action="archive-read">归档已读</button>'
+          ? `<button type="button" class="ws-col-action" data-action="archive-read">归档已读 (${batchArchivableIds.length})</button>`
           : '',
         bodyHtml: renderDoneBodyHtml(),
       },
     };
 
-    boardEl.innerHTML = WS_LANES.map((lane) => {
+    const activeLanes = [];
+    const emptyLanes = [];
+    for (const lane of WS_LANES) {
       const cfg = laneHtmlMap[lane.key];
-      return `
-        <section class="ws-col" data-col="${lane.key}" aria-label="${lane.label}">
-          <header class="ws-col-head">
-            <span class="ws-col-title">
-              ${cfg.iconHtml}
-              <span>${lane.label}</span>
-            </span>
-            <span class="ws-col-head-right">
-              ${cfg.headAction}
-              <span class="ws-col-count num">${cfg.count}</span>
-            </span>
-          </header>
-          <div class="ws-col-body">${cfg.bodyHtml}</div>
-        </section>
-      `;
-    }).join('');
+      if (cfg.totalCount > 0) activeLanes.push({ lane, cfg });
+      else emptyLanes.push({ lane, cfg });
+    }
+
+    if (stripEl) {
+      if (emptyLanes.length > 0) {
+        stripEl.hidden = false;
+        stripEl.innerHTML = emptyLanes
+          .map(
+            ({ lane, cfg }) => `
+              <span class="ws-empty-lane-pill" title="${escapeHtml(lane.emptyText)}">
+                ${cfg.iconHtml}
+                <span>${lane.label}</span>
+                <span class="num">${cfg.count}</span>
+              </span>
+            `,
+          )
+          .join('');
+      } else {
+        stripEl.hidden = true;
+        stripEl.innerHTML = '';
+      }
+    }
+
+    boardEl.innerHTML = activeLanes
+      .map(({ lane, cfg }) => {
+        return `
+          <section class="ws-col" data-col="${lane.key}" aria-label="${lane.label}">
+            <header class="ws-col-head">
+              <span class="ws-col-title">
+                ${cfg.iconHtml}
+                <span>${lane.label}</span>
+              </span>
+              <span class="ws-col-head-right">
+                ${cfg.headAction}
+                <span class="ws-col-count num">${cfg.count}</span>
+              </span>
+            </header>
+            <div class="ws-col-body">${cfg.bodyHtml}</div>
+          </section>
+        `;
+      })
+      .join('');
 
     boardEl.querySelector('[data-action="archive-read"]')?.addEventListener('click', (e) => {
       e.stopPropagation();
       if (batchArchivableIds.length > 0) {
         performBoardAction({ action: 'archive_batch', ids: batchArchivableIds });
+      }
+    });
+
+    boardEl.querySelector('[data-action="unarchive-all"]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (doneGroups.archived.length > 0) {
+        performBoardAction({ action: 'unarchive_batch', ids: doneGroups.archived.map((i) => i.id) });
       }
     });
 
@@ -2872,17 +3381,23 @@
     });
 
     function startInlineRename(card, cid) {
+      const mainBtn = card?.querySelector('.ws-card-main');
       const titleEl = card?.querySelector('.ws-card-title');
-      if (!titleEl) return;
+      if (!titleEl || !mainBtn) return;
       const original = (card.getAttribute('title') || titleEl.textContent || '').trim();
       wsEditingCid = cid;
+      card.classList.add('is-renaming');
       const input = document.createElement('input');
       input.type = 'text';
       input.className = 'ws-rename-input';
       input.value = original;
-      input.setAttribute('aria-label', '编辑会话名称');
+      input.setAttribute('aria-label', '编辑会话名称，Enter 保存，Esc 取消');
+      const hint = document.createElement('div');
+      hint.className = 'ws-rename-hint';
+      hint.textContent = 'Enter 保存 · Esc 取消';
       titleEl.innerHTML = '';
       titleEl.appendChild(input);
+      titleEl.appendChild(hint);
 
       let finished = false;
       function cleanup(save) {
@@ -2890,6 +3405,7 @@
         finished = true;
         const nextTitle = input.value.trim();
         wsEditingCid = '';
+        card.classList.remove('is-renaming');
         if (save && nextTitle && nextTitle !== original) {
           performBoardAction({ action: 'rename', id: cid, title: nextTitle });
         } else {
@@ -2941,21 +3457,30 @@
       });
     });
 
-    boardEl.querySelectorAll('.ws-card').forEach((card) => {
-      card.addEventListener('click', (e) => {
-        if (e.target instanceof Element && e.target.closest('.ws-op-btn, .ws-rename-input')) return;
-        const cid = card.dataset.cid || '';
-        if (cid) navigateToConversation(cid);
-      });
-
-      card.addEventListener('keydown', (e) => {
-        if (e.key !== 'Enter' && e.key !== ' ') return;
-        if (e.target instanceof Element && e.target.closest('.ws-op-btn, .ws-rename-input')) return;
-        e.preventDefault();
-        const cid = card.dataset.cid || '';
+    boardEl.querySelectorAll('.ws-card-main').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        if (wsEditingCid) return;
+        e.stopPropagation();
+        const cid = btn.dataset.cid || '';
         if (cid) navigateToConversation(cid);
       });
     });
+  }
+
+  function setMainPaneSiblingsInert(mainPane, view, shouldInert) {
+    if (!mainPane) return;
+    for (const child of Array.from(mainPane.children)) {
+      if (child === view) continue;
+      if (shouldInert) {
+        if (!child.hasAttribute('inert')) {
+          child.setAttribute('inert', '');
+          child.dataset.agyWsInert = '1';
+        }
+      } else if (child.dataset.agyWsInert === '1') {
+        child.removeAttribute('inert');
+        delete child.dataset.agyWsInert;
+      }
+    }
   }
 
   function ensureWorkspaceViewMounted() {
@@ -2968,11 +3493,12 @@
       view = document.createElement('div');
       view.id = WS_VIEW_ID;
       view.setAttribute('role', 'region');
-      view.setAttribute('aria-label', '工作区看板');
+      view.setAttribute('aria-label', '会话看板');
       mainPane.appendChild(view);
       wsLastRenderKey = '';
     }
     view.classList.toggle('agy-ws-open', wsOpen);
+    setMainPaneSiblingsInert(mainPane, view, wsOpen);
     if (wsOpen) {
       renderWorkspaceBoard();
     }
@@ -2980,14 +3506,38 @@
   }
 
   function setWorkspaceOpen(next) {
-    wsOpen = Boolean(next);
+    const nextOpen = Boolean(next);
+    if (nextOpen === wsOpen) return;
+    wsOpen = nextOpen;
     const menu = document.getElementById(WS_MENU_ID);
     if (menu) {
       menu.classList.toggle('agy-ws-menu-active', wsOpen);
       menu.setAttribute('aria-expanded', String(wsOpen));
     }
-    if (wsOpen) wsLastRenderKey = '';
-    ensureWorkspaceViewMounted();
+    if (wsLoadingTimer) {
+      clearTimeout(wsLoadingTimer);
+      wsLoadingTimer = null;
+    }
+    if (wsOpen) {
+      wsLastFocusedEl = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      wsBoardOpenedAt = Date.now();
+      wsLastRenderKey = '';
+      if (wsBoardData === null) {
+        wsLoadingTimer = setTimeout(() => {
+          wsLastRenderKey = '';
+          if (wsOpen) renderWorkspaceBoard();
+        }, 4100);
+      }
+      const view = ensureWorkspaceViewMounted();
+      requestAnimationFrame(() => view?.querySelector('.ws-search')?.focus());
+    } else {
+      setProjectMenuOpen(false);
+      hideWsToast();
+      ensureWorkspaceViewMounted();
+      const targetFocus = wsLastFocusedEl && wsLastFocusedEl.isConnected ? wsLastFocusedEl : menu;
+      wsLastFocusedEl = null;
+      targetFocus?.focus?.();
+    }
   }
 
   function mountWorkspaceMenu() {
@@ -3007,6 +3557,7 @@
     menu.id = WS_MENU_ID;
     menu.type = 'button';
     menu.setAttribute('aria-expanded', String(wsOpen));
+    menu.setAttribute('aria-label', '会话看板');
     menu.className = 'agy-button agy-button-custom inline-flex items-center font-medium transition-colors select-none outline-none cursor-pointer disabled:opacity-50 flex-grow w-full justify-start select-none font-normal min-w-0 gap-1.5 px-2 rounded-lg py-1.5 bg-transparent text-secondary-foreground hover:bg-sidebar-muted hover:text-foreground';
     menu.innerHTML = `
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;" aria-hidden="true">
@@ -3015,7 +3566,7 @@
         <rect x="14" y="14" width="7" height="7" rx="1"></rect>
         <rect x="3" y="14" width="7" height="7" rx="1"></rect>
       </svg>
-      <span class="truncate">工作区</span>
+      <span class="truncate">会话看板</span>
       <span class="ws-menu-badge" aria-hidden="true"></span>
     `;
     menu.addEventListener('click', (e) => {
@@ -3041,8 +3592,27 @@
   }
 
   function onWorkspaceKeydown(e) {
-    if (e.key === 'Escape' && wsOpen && !wsEditingCid) {
+    if (!wsOpen || wsEditingCid) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      if (wsProjectMenuOpen) {
+        setProjectMenuOpen(false);
+        return;
+      }
+      if (wsQuery) {
+        wsQuery = '';
+        const input = document.querySelector(`#${WS_VIEW_ID} .ws-search`);
+        if (input) input.value = '';
+        wsLastRenderKey = '';
+        renderWorkspaceBoard();
+        return;
+      }
       setWorkspaceOpen(false);
+      return;
+    }
+    if (e.key === '/' && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
+      e.preventDefault();
+      document.querySelector(`#${WS_VIEW_ID} .ws-search`)?.focus();
     }
   }
 
@@ -3050,16 +3620,25 @@
   document.addEventListener('keydown', onWorkspaceKeydown, true);
 
   window.__agyWsCleanup = () => {
+    if (wsLoadingTimer) clearTimeout(wsLoadingTimer);
+    if (wsToastTimer) clearTimeout(wsToastTimer);
     document.removeEventListener('click', onWorkspaceGlobalClick, true);
     document.removeEventListener('keydown', onWorkspaceKeydown, true);
+    const mainPane = findWorkspaceMainPane();
+    const view = document.getElementById(WS_VIEW_ID);
+    setMainPaneSiblingsInert(mainPane, view, false);
     document.getElementById(WS_MENU_ID)?.remove();
-    document.getElementById(WS_VIEW_ID)?.remove();
+    view?.remove();
     document.getElementById(WS_STYLE_ID)?.remove();
   };
 
   window.__agyCtxUpdateBoard = (boardData) => {
     applyPendingActionsToData(boardData);
     wsBoardData = boardData;
+    if (wsLoadingTimer) {
+      clearTimeout(wsLoadingTimer);
+      wsLoadingTimer = null;
+    }
     updateWorkspaceMenuBadge();
     if (wsOpen) renderWorkspaceBoard();
   };
