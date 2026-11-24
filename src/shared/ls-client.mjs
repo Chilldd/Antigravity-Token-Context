@@ -1,26 +1,40 @@
+import { execFile } from 'node:child_process';
 import http from 'node:http';
 import https from 'node:https';
-import { findLocalSubagentIds, getLocalGlobalSummary } from './local-store.mjs';
+import { promisify } from 'node:util';
+import { ensureBoardInitialized, VALID_BOARD_COLUMNS } from './board-store.mjs';
+import {
+  findLocalSubagentIds,
+  getLocalGlobalSummary,
+  listLocalRecentConversations,
+  normalizeWorkspaceUriKey,
+} from './local-store.mjs';
 import { aggregateGlobalStats, computeTrajectoryMetrics } from './metrics.mjs';
 
 const CATALOG_TTL_MS = 10 * 60 * 1000;
-const QUOTA_TTL_MS = 3 * 1000;
+const QUOTA_TTL_MS = 5 * 1000;
 const QUOTA_MIN_FORCE_MS = 800;
+const LS_DISCOVER_TTL_MS = 15 * 1000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+const execFileAsync = promisify(execFile);
 let modelCatalog = {};
 let catalogFetchedAt = 0;
 let quotaCache = null;
 let quotaFetchedAt = 0;
 let quotaInFlight = null;
+let discoveredLsCache = null; // { addr, csrf }
+let lsDiscoverFailedAt = 0;
+let lsDiscoverInFlight = null;
 const trajectoryStatsCache = new Map(); // cid -> { mtime, item }
 
-export function lsRequest(method, body = {}) {
-  const addr = (process.env.ANTIGRAVITY_LS_ADDRESS || '').trim();
-  const csrf = (process.env.ANTIGRAVITY_CSRF_TOKEN || '').trim();
-  if (!addr || !csrf) {
-    return Promise.reject(new Error('Language server connection env vars are not set.'));
-  }
+export function parseCsrfTokenFromCommandLine(commandLine) {
+  const raw = String(commandLine || '');
+  const m = raw.match(/--csrf_token(?:=|\s+)(?:"([^"]+)"|'([^']+)'|(\S+))/i);
+  return m ? (m[1] || m[2] || m[3] || '').trim() : '';
+}
+
+function rawLsRequest(addr, csrf, method, body = {}, timeoutMs = 6000) {
   const base = new URL(addr.startsWith('http') ? addr : `http://${addr}`);
   const data = JSON.stringify(body);
   const transport = base.protocol === 'https:' ? https : http;
@@ -38,7 +52,7 @@ export function lsRequest(method, body = {}) {
           'x-codeium-csrf-token': csrf,
           'Content-Length': Buffer.byteLength(data),
         },
-        timeout: 6000,
+        timeout: timeoutMs,
         rejectUnauthorized: false,
       },
       (res) => {
@@ -61,6 +75,89 @@ export function lsRequest(method, body = {}) {
     req.on('error', reject);
     req.end(data);
   });
+}
+
+async function runWindowsLsProbe() {
+  if (process.platform !== 'win32') return [];
+  const psScript = `
+    $procs = Get-CimInstance Win32_Process -Filter "Name LIKE '%language_server%'" | Where-Object { $_.CommandLine -match 'antigravity|csrf_token' }
+    $out = foreach ($p in $procs) {
+      $ports = @(Get-NetTCPConnection -OwningProcess $p.ProcessId -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty LocalPort -Unique)
+      [PSCustomObject]@{ pid = $p.ProcessId; cmd = $p.CommandLine; ports = $ports }
+    }
+    $out | ConvertTo-Json -Compress -Depth 3
+  `;
+  for (const shell of ['pwsh', 'powershell']) {
+    try {
+      const { stdout } = await execFileAsync(shell, ['-NoProfile', '-NonInteractive', '-Command', psScript], {
+        timeout: 4500,
+        windowsHide: true,
+      });
+      const trimmed = String(stdout || '').trim();
+      if (!trimmed) return [];
+      const parsed = JSON.parse(trimmed);
+      return Array.isArray(parsed) ? parsed : [parsed];
+    } catch {
+      // try fallback shell
+    }
+  }
+  return [];
+}
+
+export async function discoverLocalLsConnection() {
+  if (discoveredLsCache) return discoveredLsCache;
+  if (Date.now() - lsDiscoverFailedAt < LS_DISCOVER_TTL_MS) return null;
+  if (lsDiscoverInFlight) return lsDiscoverInFlight;
+
+  lsDiscoverInFlight = (async () => {
+    try {
+      const candidates = await runWindowsLsProbe();
+      for (const proc of candidates) {
+        const csrf = parseCsrfTokenFromCommandLine(proc?.cmd);
+        if (!csrf) continue;
+        const ports = Array.isArray(proc?.ports) ? proc.ports : [];
+        for (const port of ports) {
+          const p = Number(port);
+          if (!Number.isInteger(p) || p <= 0) continue;
+          for (const proto of ['http', 'https']) {
+            const addr = `${proto}://127.0.0.1:${p}`;
+            try {
+              await rawLsRequest(addr, csrf, 'GetAllCascadeTrajectories', {}, 1500);
+              discoveredLsCache = { addr, csrf };
+              return discoveredLsCache;
+            } catch {
+              // try next protocol or port
+            }
+          }
+        }
+      }
+      lsDiscoverFailedAt = Date.now();
+      return null;
+    } finally {
+      lsDiscoverInFlight = null;
+    }
+  })();
+
+  return lsDiscoverInFlight;
+}
+
+export async function lsRequest(method, body = {}) {
+  const envAddr = (process.env.ANTIGRAVITY_LS_ADDRESS || '').trim();
+  const envCsrf = (process.env.ANTIGRAVITY_CSRF_TOKEN || '').trim();
+  if (envAddr && envCsrf) {
+    return rawLsRequest(envAddr, envCsrf, method, body);
+  }
+
+  const discovered = await discoverLocalLsConnection();
+  if (!discovered) {
+    throw new Error('Language server connection env vars are not set.');
+  }
+  try {
+    return await rawLsRequest(discovered.addr, discovered.csrf, method, body);
+  } catch (err) {
+    discoveredLsCache = null;
+    throw err;
+  }
 }
 
 export async function ensureCatalog() {
@@ -428,7 +525,7 @@ export async function getGeminiQuotaSummary({ force = false } = {}) {
   quotaInFlight = (async () => {
     try {
       const resp = await lsRequest('RetrieveUserQuotaSummary', {
-        metadata: { ideName: 'antigravity', extensionName: 'antigravity' },
+        forceRefresh: true,
       });
       const parsed = extractGeminiQuota(resp);
       if (parsed) {
@@ -444,4 +541,177 @@ export async function getGeminiQuotaSummary({ force = false } = {}) {
     }
   })();
   return quotaInFlight;
+}
+
+function extractWorkspaceDisplayName(info) {
+  const ws = Array.isArray(info?.workspaces) ? info.workspaces[0] : null;
+  const uri = ws?.workspaceFolderAbsoluteUri || info?.trajectoryMetadata?.workspaceUris?.[0] || '';
+  if (uri) {
+    const cleaned = uri.replace(/\/+$/, '');
+    try {
+      const folder = decodeURIComponent(cleaned.split('/').pop() || '');
+      if (folder) return folder;
+    } catch {
+      const folder = cleaned.split('/').pop() || '';
+      if (folder) return folder;
+    }
+  }
+  const repoName = ws?.repository?.computedName;
+  if (repoName) return repoName.split('/').pop() || repoName;
+  return '';
+}
+
+export function normalizeBoardStatus(status = '', terminationReason = '', opts = {}) {
+  const s = String(status || '').toUpperCase();
+  const reason = String(terminationReason || '').toUpperCase();
+  if (/WAITING|CONFIRM|PENDING|NEEDS_INPUT|USER_INPUT/.test(s)) return 'waiting';
+  if (/RUNNING|QUEUED|EXECUTING|GENERATING|IN_PROGRESS/.test(s) || opts?.notFullyIdle) return 'running';
+
+  const manualCol = String(opts?.manualColumn || '').trim();
+  if (manualCol && VALID_BOARD_COLUMNS.has(manualCol)) {
+    return manualCol;
+  }
+
+  if (opts?.killed || /ERROR|FAILED|CANCELLED|ABORTED/.test(s)) return 'error';
+  if (/ERROR|FAILED|CANCELLED|ABORTED/.test(reason) && !/IDLE|DONE|COMPLETED/.test(s)) return 'error';
+  return 'idle';
+}
+
+function deriveBoardCardFlags({ status, terminationReason, killed, notFullyIdle, lastModifiedTime, cardState, initializedAt }) {
+  const state = cardState && typeof cardState === 'object' ? cardState : {};
+  const manualCol = state.column && state.column !== 'starred' ? state.column : '';
+  const boardStatus = normalizeBoardStatus(status, terminationReason, {
+    killed,
+    notFullyIdle,
+    manualColumn: manualCol,
+  });
+  const starred = Boolean(state.starred);
+  const lastMs = lastModifiedTime ? Date.parse(lastModifiedTime) : 0;
+
+  let archived = false;
+  if (state.archived && boardStatus !== 'waiting' && boardStatus !== 'running') {
+    const archivedMs = Date.parse(state.archivedAt || state.updatedAt || '');
+    if (!Number.isFinite(lastMs) || !Number.isFinite(archivedMs) || lastMs <= archivedMs + 2000) {
+      archived = true;
+    }
+  }
+
+  let isUnread = false;
+  if (boardStatus === 'idle' && !archived && Number.isFinite(lastMs) && lastMs > 0) {
+    const seenMs = state.seenAt ? Date.parse(state.seenAt) : 0;
+    const initMs = initializedAt ? Date.parse(initializedAt) : 0;
+    const baselineMs = (Number.isFinite(seenMs) && seenMs > 0) ? seenMs : (Number.isFinite(initMs) ? initMs : 0);
+    if (baselineMs > 0 && lastMs > baselineMs + 2000) {
+      isUnread = true;
+    }
+  }
+
+  return {
+    boardStatus,
+    isManual: Boolean(manualCol && boardStatus === manualCol),
+    starred,
+    archived,
+    seenAt: state.seenAt || '',
+    isUnread,
+  };
+}
+
+export async function getWorkspaceBoardData(limit = 120) {
+  const byId = new Map();
+  let currentWorkspaceName = '';
+  const currentWorkspaceKeys = new Set();
+  const { initializedAt, cards: manualMap } = ensureBoardInitialized();
+
+  const localItems = listLocalRecentConversations(limit);
+  for (const item of localItems) {
+    const flags = deriveBoardCardFlags({
+      status: item.status,
+      terminationReason: '',
+      killed: item.killed,
+      notFullyIdle: item.notFullyIdle,
+      lastModifiedTime: item.lastModifiedTime,
+      cardState: manualMap[item.id],
+      initializedAt,
+    });
+    byId.set(item.id, {
+      ...item,
+      ...flags,
+    });
+  }
+
+  try {
+    const resp = await lsRequest('GetAllCascadeTrajectories', {});
+    const summaries = resp?.trajectorySummaries || {};
+    const subagentCountByRoot = new Map();
+
+    for (const [id, info] of Object.entries(summaries)) {
+      const meta = info?.trajectoryMetadata || {};
+      const rootId = meta.rootConversationId || meta.parentConversationId;
+      if (meta.parentConversationId && rootId && rootId !== id) {
+        subagentCountByRoot.set(rootId, (subagentCountByRoot.get(rootId) || 0) + 1);
+      }
+      const ws = Array.isArray(info?.workspaces) ? info.workspaces[0] : null;
+      const wsUri = ws?.workspaceFolderAbsoluteUri || meta?.workspaceUris?.[0] || '';
+      const key = normalizeWorkspaceUriKey(wsUri);
+      if (key) currentWorkspaceKeys.add(key);
+    }
+
+    for (const [id, info] of Object.entries(summaries)) {
+      const meta = info?.trajectoryMetadata || {};
+      if (meta.parentConversationId) continue;
+      const wsName = extractWorkspaceDisplayName(info);
+      if (wsName && !currentWorkspaceName) currentWorkspaceName = wsName;
+      const ws = Array.isArray(info?.workspaces) ? info.workspaces[0] : null;
+      const prev = byId.get(id);
+      const status = info?.status || prev?.status || '';
+      const terminationReason = info?.latestExecutorTerminationReason || '';
+      const lastModifiedTime = info?.lastModifiedTime || prev?.lastModifiedTime || '';
+      const flags = deriveBoardCardFlags({
+        status,
+        terminationReason,
+        killed: prev?.killed,
+        notFullyIdle: prev?.notFullyIdle,
+        lastModifiedTime,
+        cardState: manualMap[id],
+        initializedAt,
+      });
+      byId.set(id, {
+        id,
+        summary: info?.summary || prev?.summary || id.slice(0, 8),
+        stepCount: Number(info?.stepCount) || prev?.stepCount || 0,
+        lastModifiedTime,
+        status,
+        ...flags,
+        subagentCount: Math.max(subagentCountByRoot.get(id) || 0, prev?.subagentCount || 0),
+        workspaceName: wsName || prev?.workspaceName || '',
+        workspaceKeys: prev?.workspaceKeys || [],
+        branchName: ws?.branchName || prev?.branchName || '',
+        isCurrentWorkspace: true,
+        source: 'live',
+      });
+    }
+  } catch {
+    // LS unavailable; fall back to local SQLite index only
+  }
+
+  if (currentWorkspaceKeys.size > 0) {
+    for (const item of byId.values()) {
+      if (!item.isCurrentWorkspace && Array.isArray(item.workspaceKeys)) {
+        if (item.workspaceKeys.some((k) => currentWorkspaceKeys.has(k))) {
+          item.isCurrentWorkspace = true;
+        }
+      }
+    }
+  }
+
+  const conversations = Array.from(byId.values())
+    .sort((a, b) => (b.lastModifiedTime || '').localeCompare(a.lastModifiedTime || ''))
+    .slice(0, limit)
+    .map(({ workspaceKeys, killed, notFullyIdle, ...rest }) => rest);
+
+  return {
+    currentWorkspaceName,
+    conversations,
+    updatedAt: new Date().toISOString(),
+  };
 }

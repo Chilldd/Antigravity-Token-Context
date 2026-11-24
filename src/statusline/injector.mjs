@@ -15,8 +15,8 @@ const DISCOVER_MS = 5000;
 /**
  * Start background CDP injection loop. Fails silently when CDP port is not open.
  */
-export function startCdpInjector({ getMetrics, getQuota, ports = CANDIDATE_PORTS }) {
-  const sessions = new Map(); // wsUrl -> { session, conversationId, lastSerialized }
+export function startCdpInjector({ getMetrics, getQuota, getBoard, onSetBoardStatus, ports = CANDIDATE_PORTS }) {
+  const sessions = new Map(); // wsUrl -> { session, conversationId, lastSerialized, lastBoardSerialized }
   let discovering = false;
 
   async function syncTargets() {
@@ -44,8 +44,25 @@ export function startCdpInjector({ getMetrics, getQuota, ports = CANDIDATE_PORTS
         const session = new CdpSession(url);
         try {
           await session.connect();
+          if (onSetBoardStatus) {
+            await session.call('Runtime.enable').catch(() => {});
+            await session.call('Runtime.addBinding', { name: '__agyCtxSetBoardStatus' }).catch(() => {});
+            session.onEvent((msg) => {
+              if (msg.method !== 'Runtime.bindingCalled') return;
+              if (msg.params?.name !== '__agyCtxSetBoardStatus') return;
+              try {
+                const payload = JSON.parse(String(msg.params?.payload || '{}'));
+                if (payload && (payload.id || Array.isArray(payload.ids))) {
+                  onSetBoardStatus(payload);
+                  pushMetrics();
+                }
+              } catch {
+                // ignore malformed binding payload
+              }
+            });
+          }
           await session.evalJs(INLINE_BAR_SCRIPT);
-          sessions.set(url, { session, conversationId: cid, lastSerialized: '' });
+          sessions.set(url, { session, conversationId: cid, lastSerialized: '', lastBoardSerialized: '' });
         } catch {
           session.close();
         }
@@ -60,6 +77,8 @@ export function startCdpInjector({ getMetrics, getQuota, ports = CANDIDATE_PORTS
 
   async function pushMetrics() {
     if (sessions.size === 0) return;
+    const boardData = getBoard ? await getBoard().catch(() => null) : null;
+    const boardPayload = boardData ? JSON.stringify(boardData) : '';
     for (const [url, entry] of sessions.entries()) {
       try {
         const stateRes = await entry.session.evalJs(
@@ -69,6 +88,7 @@ export function startCdpInjector({ getMetrics, getQuota, ports = CANDIDATE_PORTS
         if (!state.bootstrapped) {
           await entry.session.evalJs(INLINE_BAR_SCRIPT);
           entry.lastSerialized = '';
+          entry.lastBoardSerialized = '';
         }
 
         const liveCid = extractConversationId(state.href);
@@ -111,10 +131,15 @@ export function startCdpInjector({ getMetrics, getQuota, ports = CANDIDATE_PORTS
           data.quota = quota;
         }
         const payload = JSON.stringify(data);
-        if (payload === entry.lastSerialized) continue;
-        entry.lastSerialized = payload;
+        if (payload !== entry.lastSerialized) {
+          entry.lastSerialized = payload;
+          await entry.session.evalJs(`if (window.__agyCtxUpdate) window.__agyCtxUpdate(${payload});`);
+        }
 
-        await entry.session.evalJs(`if (window.__agyCtxUpdate) window.__agyCtxUpdate(${payload});`);
+        if (boardPayload && boardPayload !== entry.lastBoardSerialized) {
+          entry.lastBoardSerialized = boardPayload;
+          await entry.session.evalJs(`if (window.__agyCtxUpdateBoard) window.__agyCtxUpdateBoard(${boardPayload});`);
+        }
       } catch {
         entry.session.close();
         sessions.delete(url);

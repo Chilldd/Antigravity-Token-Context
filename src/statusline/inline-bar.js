@@ -1,5 +1,5 @@
 (() => {
-  const SCRIPT_VERSION = '20';
+  const SCRIPT_VERSION = '30';
   if (window.__agyCtxBarVersion === SCRIPT_VERSION) return 'already-bootstrapped';
   window.__agyCtxBarVersion = SCRIPT_VERSION;
   window.__agyCtxBarBootstrapped = true;
@@ -7,8 +7,16 @@
   if (window.__agyCtxObserver) {
     try { window.__agyCtxObserver.disconnect(); } catch {}
   }
+  if (window.__agyDemoWorkspaceCleanup) {
+    try { window.__agyDemoWorkspaceCleanup(); } catch {}
+    delete window.__agyDemoWorkspaceCleanup;
+  }
+  if (window.__agyWsCleanup) {
+    try { window.__agyWsCleanup(); } catch {}
+    delete window.__agyWsCleanup;
+  }
   document.querySelectorAll(
-    '#agy-ctx-inline-bar, #agy-ctx-inline-popover, #agy-quota-inline-bar, #agy-quota-inline-popover, #agy-ctx-inline-style',
+    '#agy-ctx-inline-bar, #agy-ctx-inline-popover, #agy-quota-inline-bar, #agy-quota-inline-popover, #agy-ctx-inline-style, #agy-ws-menu, #agy-ws-view, #agy-ws-style, #agy-demo-workspace-menu, #agy-demo-workspace-view, #agy-demo-workspace-style',
   ).forEach((el) => el.remove());
 
   const BAR_ID = 'agy-ctx-inline-bar';
@@ -1372,10 +1380,1554 @@
     renderData(data);
   }
 
+  // =========================================================================
+  // Workspace Kanban Board (Sidebar Menu + Center Conversation Overlay)
+  // =========================================================================
+  const WS_MENU_ID = 'agy-ws-menu';
+  const WS_VIEW_ID = 'agy-ws-view';
+  const WS_STYLE_ID = 'agy-ws-style';
+  const WS_LANES = [
+    { key: 'attention', label: '需处理', emptyText: '暂无待确认或异常的会话' },
+    { key: 'running', label: '进行中', emptyText: '当前没有运行中的会话' },
+    { key: 'done', label: '已完成', emptyText: '暂无已完成的会话' },
+  ];
+
+  let wsOpen = false;
+  let wsQuery = '';
+  let wsScope = 'workspace'; // 'workspace' | 'all'
+  let wsBoardData = null;
+  let wsLastRenderKey = '';
+  const wsExpandedGroups = new Set(); // 'week' | 'older' | 'archived'
+
+  function ensureWsStyle() {
+    const existing = document.getElementById(WS_STYLE_ID);
+    if (existing && existing.dataset.version === SCRIPT_VERSION) return;
+    document.querySelectorAll('#' + WS_STYLE_ID).forEach((el) => el.remove());
+    const style = document.createElement('style');
+    style.id = WS_STYLE_ID;
+    style.dataset.version = SCRIPT_VERSION;
+    style.textContent = `
+      #${WS_MENU_ID}.agy-ws-menu-active {
+        background: color-mix(in srgb, currentColor 8%, transparent) !important;
+        color: var(--foreground, inherit) !important;
+        font-weight: 500;
+      }
+      #${WS_MENU_ID} .ws-menu-badge {
+        margin-left: auto;
+        min-width: 16px;
+        height: 16px;
+        padding: 0 5px;
+        border-radius: 999px;
+        font-size: 10px;
+        font-weight: 600;
+        line-height: 16px;
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+        display: none;
+      }
+      #${WS_MENU_ID} .ws-menu-badge.is-visible {
+        display: inline-block;
+      }
+      #${WS_MENU_ID} .ws-menu-badge.is-warn {
+        background: rgba(224, 160, 67, 0.18);
+        color: #f0b95e;
+      }
+      #${WS_MENU_ID} .ws-menu-badge.is-unread {
+        background: rgba(79, 209, 175, 0.16);
+        color: #4fd1af;
+      }
+      #${WS_VIEW_ID} {
+        --ws-canvas: #13151a;
+        --ws-surface: #1a1d24;
+        --ws-surface-alt: #222630;
+        --ws-col-bg: rgba(255, 255, 255, 0.025);
+        --ws-col-head: rgba(255, 255, 255, 0.04);
+        --ws-ink: #eef1f6;
+        --ws-secondary: #c4cad6;
+        --ws-muted: #8b94a5;
+        --ws-border: rgba(238, 241, 246, 0.10);
+        --ws-border-strong: rgba(238, 241, 246, 0.18);
+        --ws-shadow: 0 1px 2px rgba(0, 0, 0, 0.24);
+        --ws-cobalt: #6b93f2;
+        --ws-cobalt-bg: rgba(107, 147, 242, 0.12);
+        --ws-emerald: #4fd1af;
+        --ws-emerald-bg: rgba(79, 209, 175, 0.11);
+        --ws-amber: #e0a043;
+        --ws-amber-bg: rgba(224, 160, 67, 0.11);
+        --ws-crimson: #e46464;
+        --ws-crimson-bg: rgba(228, 100, 100, 0.11);
+        position: absolute;
+        inset: 0;
+        z-index: 40;
+        display: none;
+        flex-direction: column;
+        overflow: hidden;
+        background: var(--ws-canvas);
+        color: var(--ws-ink);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        font-size: 12.5px;
+        line-height: 1.45;
+      }
+      #${WS_VIEW_ID}.agy-light {
+        --ws-canvas: #f7f8fa;
+        --ws-surface: #ffffff;
+        --ws-surface-alt: #f3f5f8;
+        --ws-col-bg: #f1f3f7;
+        --ws-col-head: #eaedf2;
+        --ws-ink: #111827;
+        --ws-secondary: #4b5563;
+        --ws-muted: #6b7280;
+        --ws-border: rgba(17, 24, 39, 0.09);
+        --ws-border-strong: rgba(17, 24, 39, 0.17);
+        --ws-shadow: 0 1px 2px rgba(17, 24, 39, 0.05);
+        --ws-cobalt: #3b6ce7;
+        --ws-cobalt-bg: rgba(59, 108, 231, 0.09);
+        --ws-emerald: #0b7258;
+        --ws-emerald-bg: rgba(15, 139, 108, 0.09);
+        --ws-amber: #9a5b0c;
+        --ws-amber-bg: rgba(201, 130, 30, 0.09);
+        --ws-crimson: #b42828;
+        --ws-crimson-bg: rgba(207, 58, 58, 0.09);
+      }
+      #${WS_VIEW_ID}.agy-ws-open {
+        display: flex;
+      }
+      #${WS_VIEW_ID} ::selection {
+        background: var(--ws-cobalt-bg);
+        color: var(--ws-ink);
+      }
+      #${WS_VIEW_ID} .num {
+        font-variant-numeric: tabular-nums;
+        font-feature-settings: "tnum" 1;
+      }
+      #${WS_VIEW_ID} .ws-topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+        padding: 12px 92px 12px 20px;
+        background: var(--ws-surface);
+        border-bottom: 1px solid var(--ws-border);
+        flex-shrink: 0;
+      }
+      #${WS_VIEW_ID} .ws-topbar-left,
+      #${WS_VIEW_ID} .ws-topbar-right {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      #${WS_VIEW_ID} .ws-heading {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        color: var(--ws-ink);
+        margin: 0;
+      }
+      #${WS_VIEW_ID} .ws-seg {
+        display: inline-flex;
+        align-items: center;
+        padding: 2px;
+        border-radius: 8px;
+        background: var(--ws-surface-alt);
+        border: 1px solid var(--ws-border);
+      }
+      #${WS_VIEW_ID} .ws-seg-btn {
+        appearance: none;
+        border: none;
+        background: transparent;
+        color: var(--ws-muted);
+        font-size: 11.5px;
+        font-weight: 500;
+        padding: 3px 9px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: color 0.15s ease, background-color 0.15s ease;
+      }
+      #${WS_VIEW_ID} .ws-seg-btn:hover {
+        color: var(--ws-ink);
+      }
+      #${WS_VIEW_ID} .ws-seg-btn[aria-pressed="true"] {
+        background: var(--ws-surface);
+        color: var(--ws-ink);
+        box-shadow: var(--ws-shadow);
+      }
+      #${WS_VIEW_ID} .ws-search-wrap {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+      }
+      #${WS_VIEW_ID} .ws-search-icon {
+        position: absolute;
+        left: 8px;
+        color: var(--ws-muted);
+        pointer-events: none;
+      }
+      #${WS_VIEW_ID} .ws-search {
+        height: 26px;
+        width: 200px;
+        padding: 0 8px 0 26px;
+        border-radius: 6px;
+        border: 1px solid var(--ws-border);
+        background: var(--ws-canvas);
+        color: var(--ws-ink);
+        font-size: 12px;
+        outline: none;
+        transition: border-color 0.15s ease;
+      }
+      #${WS_VIEW_ID} .ws-search::placeholder {
+        color: var(--ws-muted);
+      }
+      #${WS_VIEW_ID} .ws-search:focus {
+        border-color: var(--ws-cobalt);
+      }
+      #${WS_VIEW_ID} .ws-total {
+        font-size: 11.5px;
+        color: var(--ws-muted);
+      }
+      #${WS_VIEW_ID} .ws-btn {
+        appearance: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 26px;
+        padding: 0 10px;
+        border-radius: 7px;
+        border: 1px solid var(--ws-border);
+        background: var(--ws-surface);
+        color: var(--ws-secondary);
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+      }
+      #${WS_VIEW_ID} .ws-btn:hover {
+        border-color: var(--ws-border-strong);
+        color: var(--ws-ink);
+      }
+      #${WS_VIEW_ID} .ws-btn-primary {
+        background: var(--ws-cobalt);
+        border-color: var(--ws-cobalt);
+        color: #ffffff;
+      }
+      #${WS_VIEW_ID} .ws-btn-primary:hover {
+        color: #ffffff;
+        opacity: 0.92;
+      }
+      #${WS_VIEW_ID} .ws-btn:focus-visible,
+      #${WS_VIEW_ID} .ws-seg-btn:focus-visible,
+      #${WS_VIEW_ID} .ws-card:focus-visible,
+      #${WS_VIEW_ID} .ws-op-btn:focus-visible,
+      #${WS_VIEW_ID} .ws-group-toggle:focus-visible,
+      #${WS_VIEW_ID} .ws-col-action:focus-visible {
+        outline: 2px solid var(--ws-cobalt);
+        outline-offset: 1px;
+      }
+      #${WS_VIEW_ID} .ws-board-scroll {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        padding: 16px 20px 20px;
+      }
+      #${WS_VIEW_ID} .ws-board-scroll::-webkit-scrollbar,
+      #${WS_VIEW_ID} .ws-col-body::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      #${WS_VIEW_ID} .ws-board-scroll::-webkit-scrollbar-thumb,
+      #${WS_VIEW_ID} .ws-col-body::-webkit-scrollbar-thumb {
+        background: var(--ws-border-strong);
+        border-radius: 999px;
+      }
+      #${WS_VIEW_ID} .ws-board {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(260px, 1fr));
+        gap: 12px;
+        min-height: 100%;
+        align-items: start;
+      }
+      @media (max-width: 900px) {
+        #${WS_VIEW_ID} .ws-board {
+          grid-template-columns: 1fr;
+          min-height: auto;
+        }
+        #${WS_VIEW_ID} .ws-col {
+          max-height: none;
+          min-height: 140px;
+        }
+      }
+      #${WS_VIEW_ID} .ws-col {
+        display: flex;
+        flex-direction: column;
+        min-height: 360px;
+        max-height: calc(100vh - 140px);
+        border-radius: 10px;
+        background: var(--ws-col-bg);
+        border: 1px solid var(--ws-border);
+        overflow: hidden;
+      }
+      #${WS_VIEW_ID} .ws-col-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 9px 12px;
+        background: var(--ws-col-head);
+        border-bottom: 1px solid var(--ws-border);
+        flex-shrink: 0;
+      }
+      #${WS_VIEW_ID} .ws-col-head-right {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      #${WS_VIEW_ID} .ws-col-action {
+        appearance: none;
+        border: 1px solid var(--ws-border);
+        background: var(--ws-surface);
+        color: var(--ws-secondary);
+        font-size: 11px;
+        font-weight: 500;
+        padding: 2px 7px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+      }
+      #${WS_VIEW_ID} .ws-col-action:hover {
+        border-color: var(--ws-border-strong);
+        color: var(--ws-ink);
+      }
+      #${WS_VIEW_ID} .ws-col-title {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--ws-ink);
+      }
+      #${WS_VIEW_ID} .ws-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        flex-shrink: 0;
+      }
+      #${WS_VIEW_ID} .ws-dot-attention { background: var(--ws-amber); }
+      #${WS_VIEW_ID} .ws-dot-attention.is-error-only { background: var(--ws-crimson); }
+      #${WS_VIEW_ID} .ws-dot-running {
+        background: var(--ws-cobalt);
+        animation: agyWsPulse 1.8s ease-in-out infinite;
+      }
+      #${WS_VIEW_ID} .ws-dot-done { background: var(--ws-emerald); }
+      @keyframes agyWsPulse {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.45; transform: scale(0.85); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #${WS_VIEW_ID} .ws-dot-running { animation: none; }
+      }
+      #${WS_VIEW_ID} .ws-col-count {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--ws-muted);
+        padding: 1px 7px;
+        border-radius: 999px;
+        background: var(--ws-surface);
+        border: 1px solid var(--ws-border);
+      }
+      #${WS_VIEW_ID} .ws-col-body {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
+      }
+      #${WS_VIEW_ID} .ws-card {
+        position: relative;
+        width: 100%;
+        text-align: left;
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
+        padding: 10px 11px 10px 12px;
+        border-radius: 9px;
+        background: var(--ws-surface);
+        border: 1px solid var(--ws-border);
+        border-left: 3px solid transparent;
+        box-shadow: var(--ws-shadow);
+        color: var(--ws-ink);
+        cursor: pointer;
+        box-sizing: border-box;
+        transition: border-color 0.15s ease, background-color 0.15s ease, transform 0.15s ease, opacity 0.15s ease;
+      }
+      #${WS_VIEW_ID} .ws-card:hover {
+        border-color: var(--ws-border-strong);
+        transform: translateY(-1px);
+      }
+      #${WS_VIEW_ID} .ws-card.is-waiting {
+        border-left-color: var(--ws-amber);
+        background: color-mix(in srgb, var(--ws-amber-bg) 38%, var(--ws-surface));
+      }
+      #${WS_VIEW_ID} .ws-card.is-error {
+        border-left-color: var(--ws-crimson);
+        background: color-mix(in srgb, var(--ws-crimson-bg) 38%, var(--ws-surface));
+      }
+      #${WS_VIEW_ID} .ws-card.is-running {
+        border-left-color: var(--ws-cobalt);
+        background: color-mix(in srgb, var(--ws-cobalt-bg) 35%, var(--ws-surface));
+      }
+      #${WS_VIEW_ID} .ws-card.is-unread {
+        border-left-color: var(--ws-emerald);
+        background: color-mix(in srgb, var(--ws-emerald-bg) 28%, var(--ws-surface));
+      }
+      #${WS_VIEW_ID} .ws-card.is-done {
+        border-left-width: 1px;
+        border-left-color: var(--ws-border);
+      }
+      #${WS_VIEW_ID} .ws-card.is-archived {
+        opacity: 0.7;
+        background: var(--ws-surface-alt);
+      }
+      #${WS_VIEW_ID} .ws-card.is-archived:hover {
+        opacity: 0.95;
+      }
+      #${WS_VIEW_ID} .ws-card.is-current {
+        border-color: var(--ws-cobalt);
+      }
+      #${WS_VIEW_ID} .ws-card.is-dragging {
+        opacity: 0.35;
+      }
+      .ws-drag-ghost {
+        position: fixed;
+        z-index: 2147483647;
+        pointer-events: none;
+        margin: 0;
+        opacity: 0.94;
+        transform: rotate(1deg) scale(1.01);
+        box-shadow: 0 10px 26px rgba(0, 0, 0, 0.22);
+        border-radius: 10px;
+        padding: 11px 12px;
+        background: var(--ws-surface, #ffffff);
+        border: 1px solid var(--ws-cobalt, #3b6ce7);
+        color: var(--ws-ink, #111827);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        font-size: 12.5px;
+        box-sizing: border-box;
+      }
+      #${WS_VIEW_ID} .ws-col.ws-col-over {
+        border-color: var(--ws-cobalt);
+        background: var(--ws-cobalt-bg);
+      }
+      #${WS_VIEW_ID} .ws-card-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      #${WS_VIEW_ID} .ws-card-title-wrap {
+        display: flex;
+        align-items: flex-start;
+        gap: 5px;
+        min-width: 0;
+        flex: 1;
+      }
+      #${WS_VIEW_ID} .ws-star-mark {
+        color: var(--ws-amber);
+        flex-shrink: 0;
+        margin-top: 2px;
+      }
+      #${WS_VIEW_ID} .ws-card-title {
+        font-size: 12.5px;
+        font-weight: 500;
+        line-height: 1.4;
+        color: var(--ws-ink);
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        word-break: break-word;
+      }
+      #${WS_VIEW_ID} .ws-card-right {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        flex-shrink: 0;
+      }
+      #${WS_VIEW_ID} .ws-card-ops {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+      }
+      #${WS_VIEW_ID} .ws-op-btn {
+        appearance: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        padding: 0;
+        border: 1px solid transparent;
+        border-radius: 5px;
+        background: transparent;
+        color: var(--ws-muted);
+        cursor: pointer;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.12s ease, color 0.12s ease, background-color 0.12s ease, border-color 0.12s ease;
+      }
+      #${WS_VIEW_ID} .ws-card:hover .ws-op-btn,
+      #${WS_VIEW_ID} .ws-card:focus-within .ws-op-btn,
+      #${WS_VIEW_ID} .ws-op-btn.is-always {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      #${WS_VIEW_ID} .ws-op-btn:hover {
+        background: var(--ws-surface-alt);
+        border-color: var(--ws-border);
+        color: var(--ws-ink);
+      }
+      #${WS_VIEW_ID} .ws-op-btn.is-starred {
+        color: var(--ws-amber);
+      }
+      #${WS_VIEW_ID} .ws-op-text-btn {
+        width: auto;
+        padding: 0 5px;
+        font-size: 10px;
+        font-weight: 500;
+      }
+      #${WS_VIEW_ID} .ws-state-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        flex-shrink: 0;
+        font-size: 10px;
+        font-weight: 600;
+        padding: 1px 6px;
+        border-radius: 999px;
+        border: 1px solid transparent;
+      }
+      #${WS_VIEW_ID} .ws-state-pill.tone-waiting {
+        background: var(--ws-amber-bg);
+        color: var(--ws-amber);
+        border-color: color-mix(in srgb, var(--ws-amber) 30%, transparent);
+      }
+      #${WS_VIEW_ID} .ws-state-pill.tone-error {
+        background: var(--ws-crimson-bg);
+        color: var(--ws-crimson);
+        border-color: color-mix(in srgb, var(--ws-crimson) 30%, transparent);
+      }
+      #${WS_VIEW_ID} .ws-state-pill.tone-running {
+        background: var(--ws-cobalt-bg);
+        color: var(--ws-cobalt);
+        border-color: color-mix(in srgb, var(--ws-cobalt) 28%, transparent);
+      }
+      #${WS_VIEW_ID} .ws-state-pill.tone-unread {
+        background: var(--ws-emerald-bg);
+        color: var(--ws-emerald);
+        border-color: color-mix(in srgb, var(--ws-emerald) 30%, transparent);
+      }
+      #${WS_VIEW_ID} .ws-state-pill.tone-archived {
+        background: var(--ws-surface-alt);
+        color: var(--ws-muted);
+        border-color: var(--ws-border);
+      }
+      #${WS_VIEW_ID} .ws-state-pill-dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: currentColor;
+        animation: agyWsPulse 1.8s ease-in-out infinite;
+      }
+      #${WS_VIEW_ID} .ws-current-pill {
+        flex-shrink: 0;
+        font-size: 10px;
+        font-weight: 600;
+        padding: 1px 6px;
+        border-radius: 999px;
+        background: var(--ws-cobalt-bg);
+        color: var(--ws-cobalt);
+      }
+      #${WS_VIEW_ID} .ws-manual-tag {
+        color: var(--ws-cobalt);
+        background: var(--ws-cobalt-bg);
+      }
+      #${WS_VIEW_ID} .ws-card-meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 11px;
+        color: var(--ws-muted);
+      }
+      #${WS_VIEW_ID} .ws-card-tags {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        flex: 1;
+      }
+      #${WS_VIEW_ID} .ws-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        min-width: 0;
+        max-width: 120px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        padding: 1px 6px;
+        border-radius: 5px;
+        background: var(--ws-surface-alt);
+        color: var(--ws-secondary);
+        font-size: 10.5px;
+      }
+      #${WS_VIEW_ID} .ws-project-tag {
+        max-width: 150px;
+      }
+      #${WS_VIEW_ID} .ws-group-label {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 4px 4px 1px;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--ws-muted);
+      }
+      #${WS_VIEW_ID} .ws-group-label.is-unread {
+        color: var(--ws-emerald);
+      }
+      #${WS_VIEW_ID} .ws-group-toggle {
+        appearance: none;
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 6px 10px;
+        border-radius: 8px;
+        border: 1px dashed var(--ws-border);
+        background: transparent;
+        color: var(--ws-muted);
+        font-size: 11.5px;
+        font-weight: 500;
+        cursor: pointer;
+        text-align: left;
+        transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+      }
+      #${WS_VIEW_ID} .ws-group-toggle:hover {
+        border-color: var(--ws-border-strong);
+        color: var(--ws-ink);
+        background: var(--ws-surface);
+      }
+      #${WS_VIEW_ID} .ws-group-toggle-left {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      #${WS_VIEW_ID} .ws-empty {
+        padding: 28px 12px;
+        text-align: center;
+        font-size: 11.5px;
+        color: var(--ws-muted);
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function formatRelativeTime(iso) {
+    if (!iso) return '';
+    const ts = Date.parse(iso);
+    if (!Number.isFinite(ts)) return '';
+    const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+    if (diffSec < 60) return '刚刚';
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}分钟前`;
+    const diffHour = Math.floor(diffMin / 60);
+    if (diffHour < 24) return `${diffHour}小时前`;
+    const diffDay = Math.floor(diffHour / 24);
+    if (diffDay === 1) return '昨天';
+    if (diffDay < 7) return `${diffDay}天前`;
+    const d = new Date(ts);
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  }
+
+  function escapeHtml(text) {
+    return String(text || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function findSidebarMenuAnchor() {
+    const customLink = document.querySelector('a[href="/customizations"]');
+    if (customLink && customLink.parentElement) {
+      return { list: customLink.parentElement, refNode: customLink };
+    }
+    const candidates = Array.from(document.querySelectorAll('a, button'));
+    const fallback = candidates.find((el) => {
+      const t = (el.innerText || '').trim();
+      return t === '自定义' || t === 'Customizations';
+    });
+    if (fallback && fallback.parentElement) {
+      return { list: fallback.parentElement, refNode: fallback };
+    }
+    return null;
+  }
+
+  function findWorkspaceMainPane() {
+    const anchor = findSidebarMenuAnchor();
+    if (!anchor) return null;
+    let el = anchor.list;
+    while (el && el.parentElement) {
+      if (String(el.parentElement.className || '').includes('relative flex w-full h-full outline-none')) {
+        const siblings = Array.from(el.parentElement.children);
+        return siblings[siblings.length - 1] || null;
+      }
+      el = el.parentElement;
+    }
+    return null;
+  }
+
+  function navigateToConversation(cid) {
+    if (!cid) return;
+    markConversationSeen(cid);
+    setWorkspaceOpen(false);
+    const link = document.querySelector(`a[href*="/c/${cid}"]`);
+    if (link) {
+      link.click();
+      return;
+    }
+    const url = new URL(location.href);
+    const nextPath = `/c/${cid}${url.search}`;
+    try {
+      history.pushState({}, '', nextPath);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    } catch {
+      location.href = nextPath;
+    }
+  }
+
+  function triggerNewConversation() {
+    setWorkspaceOpen(false);
+    const newBtn = document.querySelector('a[href="/"]');
+    if (newBtn) newBtn.click();
+  }
+
+  function buildWsShell(view) {
+    view.innerHTML = `
+      <div class="ws-topbar">
+        <div class="ws-topbar-left">
+          <h2 class="ws-heading">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="3" y="3" width="7" height="7" rx="1"></rect>
+              <rect x="14" y="3" width="7" height="7" rx="1"></rect>
+              <rect x="14" y="14" width="7" height="7" rx="1"></rect>
+              <rect x="3" y="14" width="7" height="7" rx="1"></rect>
+            </svg>
+            <span>工作区看板</span>
+          </h2>
+          <div class="ws-seg" role="group" aria-label="工作区范围">
+            <button type="button" class="ws-seg-btn" data-scope="workspace" aria-pressed="${wsScope === 'workspace'}">当前项目</button>
+            <button type="button" class="ws-seg-btn" data-scope="all" aria-pressed="${wsScope === 'all'}">全部</button>
+          </div>
+          <label class="ws-search-wrap">
+            <svg class="ws-search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input class="ws-search" type="search" placeholder="筛选会话、分支或项目…" aria-label="筛选会话">
+          </label>
+        </div>
+        <div class="ws-topbar-right">
+          <span class="ws-total num" data-role="ws-total"></span>
+          <button class="ws-btn ws-btn-primary" data-action="new" type="button">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            <span>新建对话</span>
+          </button>
+          <button class="ws-btn" data-action="close" type="button">返回对话</button>
+        </div>
+      </div>
+      <div class="ws-board-scroll">
+        <div class="ws-board" data-role="ws-board"></div>
+      </div>
+    `;
+
+    view.querySelectorAll('.ws-seg-btn[data-scope]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const nextScope = btn.dataset.scope === 'all' ? 'all' : 'workspace';
+        if (wsScope === nextScope) return;
+        wsScope = nextScope;
+        view.querySelectorAll('.ws-seg-btn[data-scope]').forEach((b) => {
+          b.setAttribute('aria-pressed', String(b.dataset.scope === wsScope));
+        });
+        wsLastRenderKey = '';
+        renderWorkspaceBoard();
+      });
+    });
+
+    const searchInput = view.querySelector('.ws-search');
+    if (searchInput) {
+      searchInput.value = wsQuery;
+      searchInput.addEventListener('input', () => {
+        wsQuery = searchInput.value || '';
+        wsLastRenderKey = '';
+        renderWorkspaceBoard();
+      });
+    }
+
+    view.querySelector('[data-action="new"]')?.addEventListener('click', triggerNewConversation);
+    view.querySelector('[data-action="close"]')?.addEventListener('click', () => setWorkspaceOpen(false));
+  }
+
+  const wsPendingActions = new Map(); // cid -> { until, patch }
+
+  function sendBoardAction(payload) {
+    if (typeof window.__agyCtxSetBoardStatus !== 'function') return;
+    try {
+      window.__agyCtxSetBoardStatus(JSON.stringify(payload));
+    } catch {
+      // ignore binding error
+    }
+  }
+
+  function applyPendingActionsToData(boardData) {
+    if (!boardData || !Array.isArray(boardData.conversations) || wsPendingActions.size === 0) return;
+    const now = Date.now();
+    for (const [cid, entry] of wsPendingActions.entries()) {
+      if (now > entry.until) {
+        wsPendingActions.delete(cid);
+        continue;
+      }
+      const item = boardData.conversations.find((c) => c.id === cid);
+      if (!item) continue;
+      Object.assign(item, entry.patch);
+    }
+  }
+
+  function setPendingPatch(cid, patch) {
+    const prev = wsPendingActions.get(cid);
+    wsPendingActions.set(cid, {
+      until: Date.now() + 2500,
+      patch: { ...(prev?.patch || {}), ...patch },
+    });
+  }
+
+  function performBoardAction(payload) {
+    if (!payload || typeof payload !== 'object') return;
+    const action = payload.action || '';
+    if (action === 'archive_batch' && Array.isArray(payload.ids)) {
+      const idSet = new Set(payload.ids);
+      const nowIso = new Date().toISOString();
+      if (Array.isArray(wsBoardData?.conversations)) {
+        for (const item of wsBoardData.conversations) {
+          if (!idSet.has(item.id)) continue;
+          item.archived = true;
+          item.isUnread = false;
+          item.seenAt = nowIso;
+          setPendingPatch(item.id, { archived: true, isUnread: false, seenAt: nowIso });
+        }
+      }
+      wsLastRenderKey = '';
+      renderWorkspaceBoard();
+      updateWorkspaceMenuBadge();
+      sendBoardAction(payload);
+      return;
+    }
+
+    const cid = payload.id;
+    if (!cid) return;
+    const target = Array.isArray(wsBoardData?.conversations)
+      ? wsBoardData.conversations.find((c) => c.id === cid)
+      : null;
+
+    if (action === 'star') {
+      const next = Boolean(payload.value);
+      if (target) target.starred = next;
+      setPendingPatch(cid, { starred: next });
+    } else if (action === 'archive') {
+      const next = Boolean(payload.value);
+      const nowIso = new Date().toISOString();
+      const patch = next
+        ? { archived: true, isUnread: false, seenAt: nowIso }
+        : { archived: false };
+      if (target) Object.assign(target, patch);
+      setPendingPatch(cid, patch);
+    } else if (action === 'seen') {
+      const nowIso = new Date().toISOString();
+      const patch = { isUnread: false, seenAt: nowIso };
+      if (target) Object.assign(target, patch);
+      setPendingPatch(cid, patch);
+    } else if (action === 'move' || payload.column !== undefined) {
+      const col = payload.column || '';
+      if (col === 'auto') {
+        const autoStatus = target && /WAITING|CONFIRM|PENDING|NEEDS_INPUT|USER_INPUT/i.test(target.status || '')
+          ? 'waiting'
+          : (target && /RUNNING|QUEUED|EXECUTING|GENERATING|IN_PROGRESS/i.test(target.status || '')
+              ? 'running'
+              : 'idle');
+        const patch = { isManual: false, boardStatus: autoStatus };
+        if (target) Object.assign(target, patch);
+        setPendingPatch(cid, patch);
+      } else {
+        const patch = { isManual: true, boardStatus: col };
+        if (target) Object.assign(target, patch);
+        setPendingPatch(cid, patch);
+      }
+    }
+
+    wsLastRenderKey = '';
+    renderWorkspaceBoard();
+    updateWorkspaceMenuBadge();
+    sendBoardAction(payload);
+  }
+
+  function markConversationSeen(cid) {
+    if (!cid || !Array.isArray(wsBoardData?.conversations)) return;
+    const target = wsBoardData.conversations.find((c) => c.id === cid);
+    if (!target) return;
+    if (target.isUnread || (target.boardStatus === 'idle' && !target.seenAt)) {
+      performBoardAction({ action: 'seen', id: cid });
+    }
+  }
+
+  function getScopedBoardItems(q) {
+    const list = Array.isArray(wsBoardData?.conversations) ? wsBoardData.conversations : [];
+    const hasCurrentWs = list.some((i) => i.isCurrentWorkspace);
+    const useWorkspaceScope = wsScope === 'workspace' && hasCurrentWs && !q;
+    return list.filter((item) => {
+      if (useWorkspaceScope && !item.isCurrentWorkspace) return false;
+      if (!q) return true;
+      return (
+        String(item.summary || '').toLowerCase().includes(q) ||
+        String(item.branchName || '').toLowerCase().includes(q) ||
+        String(item.workspaceName || '').toLowerCase().includes(q) ||
+        String(item.id || '').toLowerCase().includes(q)
+      );
+    });
+  }
+
+  function computeBoardRenderKey(filtered, q, currentCid) {
+    return JSON.stringify([
+      q,
+      wsScope,
+      currentCid,
+      Array.from(wsExpandedGroups).sort(),
+      filtered.map((i) =>
+        `${i.id}:${i.boardStatus}:${i.isManual ? 1 : 0}:${i.starred ? 1 : 0}:${i.archived ? 1 : 0}:${i.isUnread ? 1 : 0}:${i.stepCount}:${i.subagentCount}:${i.lastModifiedTime}`,
+      ),
+    ]);
+  }
+
+  function sortBoardCards(items) {
+    return items.slice().sort((a, b) => {
+      if (Boolean(a.starred) !== Boolean(b.starred)) return a.starred ? -1 : 1;
+      return (b.lastModifiedTime || '').localeCompare(a.lastModifiedTime || '');
+    });
+  }
+
+  function getTodayStartMs() {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  }
+
+  function updateWorkspaceMenuBadge() {
+    const menu = document.getElementById(WS_MENU_ID);
+    const badge = menu?.querySelector('.ws-menu-badge');
+    if (!badge) return;
+    const list = Array.isArray(wsBoardData?.conversations) ? wsBoardData.conversations : [];
+    const currentCid = getCurrentCid();
+    const hasCurrentWs = list.some((i) => i.isCurrentWorkspace);
+    const scoped = hasCurrentWs ? list.filter((i) => i.isCurrentWorkspace) : list;
+    let attentionCount = 0;
+    let unreadCount = 0;
+    for (const item of scoped) {
+      if (item.boardStatus === 'waiting' || item.boardStatus === 'error') {
+        attentionCount += 1;
+      } else if (item.boardStatus === 'idle' && !item.archived && item.isUnread && item.id !== currentCid) {
+        unreadCount += 1;
+      }
+    }
+    const total = attentionCount + unreadCount;
+    badge.classList.remove('is-visible', 'is-warn', 'is-unread');
+    if (total <= 0) {
+      badge.textContent = '';
+      return;
+    }
+    badge.textContent = total > 99 ? '99+' : String(total);
+    badge.classList.add('is-visible', attentionCount > 0 ? 'is-warn' : 'is-unread');
+  }
+
+  function moveBoardCard(cid, column) {
+    if (!cid) return;
+    performBoardAction({ action: 'move', id: cid, column });
+  }
+
+  let wsDraggingCid = '';
+
+  function renderWorkspaceBoard() {
+    const view = document.getElementById(WS_VIEW_ID);
+    if (!view || !wsOpen) return;
+    view.classList.toggle('agy-light', isLightSurface());
+
+    if (!view.querySelector('[data-role="ws-board"]')) {
+      buildWsShell(view);
+    }
+
+    const currentCid = getCurrentCid();
+    const q = wsQuery.trim().toLowerCase();
+    const filtered = getScopedBoardItems(q);
+
+    const renderKey = computeBoardRenderKey(filtered, q, currentCid);
+    if (renderKey === wsLastRenderKey) return;
+    wsLastRenderKey = renderKey;
+
+    const attentionItems = [];
+    const runningItems = [];
+    const doneItems = [];
+
+    for (const item of filtered) {
+      if (item.boardStatus === 'waiting' || item.boardStatus === 'error') {
+        attentionItems.push(item);
+      } else if (item.boardStatus === 'running') {
+        runningItems.push(item);
+      } else {
+        doneItems.push(item);
+      }
+    }
+
+    const sortedAttention = sortBoardCards(attentionItems);
+    const sortedRunning = sortBoardCards(runningItems);
+
+    const todayStartMs = getTodayStartMs();
+    const sevenDaysAgoMs = todayStartMs - 6 * 24 * 60 * 60 * 1000;
+
+    const doneGroups = {
+      unread: [],
+      today: [],
+      week: [],
+      older: [],
+      archived: [],
+    };
+    const batchArchivableIds = [];
+
+    for (const item of doneItems) {
+      const isCurrent = currentCid && item.id === currentCid;
+      if (item.archived) {
+        doneGroups.archived.push(item);
+        continue;
+      }
+      if (item.isUnread && !isCurrent) {
+        doneGroups.unread.push(item);
+        continue;
+      }
+      if (!item.starred && !isCurrent) {
+        batchArchivableIds.push(item.id);
+      }
+      const ts = item.lastModifiedTime ? Date.parse(item.lastModifiedTime) : 0;
+      if (item.starred || isCurrent || (Number.isFinite(ts) && ts >= todayStartMs)) {
+        doneGroups.today.push(item);
+      } else if (Number.isFinite(ts) && ts >= sevenDaysAgoMs) {
+        doneGroups.week.push(item);
+      } else {
+        doneGroups.older.push(item);
+      }
+    }
+
+    for (const key of Object.keys(doneGroups)) {
+      doneGroups[key] = sortBoardCards(doneGroups[key]);
+    }
+
+    const totalEl = view.querySelector('[data-role="ws-total"]');
+    if (totalEl) {
+      const activeDoneCount = doneItems.length - doneGroups.archived.length;
+      const parts = [];
+      if (sortedAttention.length > 0) parts.push(`需处理 ${sortedAttention.length}`);
+      if (sortedRunning.length > 0) parts.push(`进行中 ${sortedRunning.length}`);
+      parts.push(`共 ${sortedAttention.length + sortedRunning.length + activeDoneCount}`);
+      totalEl.textContent = parts.join(' · ');
+    }
+
+    const boardEl = view.querySelector('[data-role="ws-board"]');
+    if (!boardEl) return;
+
+    function renderCardHtml(item, laneKey) {
+      const isCurrent = currentCid && item.id === currentCid;
+      const isUnread = laneKey === 'done' && !item.archived && item.isUnread && !isCurrent;
+      const timeLabel = formatRelativeTime(item.lastModifiedTime);
+
+      let cardToneClass = 'is-done';
+      let pillHtml = '';
+      if (item.boardStatus === 'waiting') {
+        cardToneClass = 'is-waiting';
+        pillHtml = '<span class="ws-state-pill tone-waiting">待确认</span>';
+      } else if (item.boardStatus === 'error') {
+        cardToneClass = 'is-error';
+        pillHtml = '<span class="ws-state-pill tone-error">异常</span>';
+      } else if (item.boardStatus === 'running') {
+        cardToneClass = 'is-running';
+        pillHtml = '<span class="ws-state-pill tone-running"><span class="ws-state-pill-dot" aria-hidden="true"></span><span>进行中</span></span>';
+      } else if (item.archived) {
+        cardToneClass = 'is-archived';
+        pillHtml = '<span class="ws-state-pill tone-archived">已归档</span>';
+      } else if (isUnread) {
+        cardToneClass = 'is-unread';
+        pillHtml = '<span class="ws-state-pill tone-unread">新完成</span>';
+      }
+
+      const tagParts = [];
+      if (item.workspaceName) {
+        tagParts.push(
+          `<span class="ws-tag ws-project-tag" title="项目：${escapeHtml(item.workspaceName)}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg><span class="truncate">${escapeHtml(item.workspaceName)}</span></span>`,
+        );
+      }
+      if (item.branchName) {
+        tagParts.push(
+          `<span class="ws-tag" title="${escapeHtml(item.branchName)}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;" aria-hidden="true"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg><span class="truncate">${escapeHtml(item.branchName)}</span></span>`,
+        );
+      }
+      if (item.subagentCount > 0) {
+        tagParts.push(`<span class="ws-tag num">${item.subagentCount} 子代理</span>`);
+      }
+      if (item.stepCount > 0 && tagParts.length < 2) {
+        tagParts.push(`<span class="ws-tag num">${item.stepCount} 步</span>`);
+      }
+      if (item.isManual) {
+        tagParts.push('<span class="ws-tag ws-manual-tag">手动</span>');
+      }
+
+      const starBtnHtml = `
+        <button type="button" class="ws-op-btn ${item.starred ? 'is-starred is-always' : ''}" data-op="star" data-cid="${escapeHtml(item.id)}" data-next="${item.starred ? '0' : '1'}" aria-label="${item.starred ? '取消关注' : '关注此会话'}" title="${item.starred ? '取消关注' : '关注置顶'}">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="${item.starred ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+          </svg>
+        </button>
+      `;
+
+      let doneOpsHtml = '';
+      if (laneKey === 'done') {
+        if (isUnread) {
+          doneOpsHtml += `
+            <button type="button" class="ws-op-btn" data-op="seen" data-cid="${escapeHtml(item.id)}" aria-label="标为已读" title="标为已读">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+            </button>
+          `;
+        }
+        if (item.archived) {
+          doneOpsHtml += `
+            <button type="button" class="ws-op-btn" data-op="unarchive" data-cid="${escapeHtml(item.id)}" aria-label="移出归档" title="移出归档">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="9 14 4 9 9 4"></polyline>
+                <path d="M20 20v-7a4 4 0 0 0-4-4H4"></path>
+              </svg>
+            </button>
+          `;
+        } else {
+          doneOpsHtml += `
+            <button type="button" class="ws-op-btn" data-op="archive" data-cid="${escapeHtml(item.id)}" aria-label="归档" title="归档此会话">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+            </button>
+          `;
+        }
+      }
+
+      const autoBtnHtml = item.isManual
+        ? `<button type="button" class="ws-op-btn ws-op-text-btn" data-op="auto" data-cid="${escapeHtml(item.id)}" aria-label="恢复自动分类" title="恢复自动分类">自动</button>`
+        : '';
+
+      return `
+        <div class="ws-card ${cardToneClass} ${isCurrent ? 'is-current' : ''}" role="button" tabindex="0" data-cid="${escapeHtml(item.id)}" data-col="${escapeHtml(laneKey)}" title="${escapeHtml(item.summary)}">
+          <div class="ws-card-top">
+            <div class="ws-card-title-wrap">
+              <div class="ws-card-title">${escapeHtml(item.summary)}</div>
+            </div>
+            <div class="ws-card-right">
+              <div class="ws-card-ops">
+                ${autoBtnHtml}
+                ${doneOpsHtml}
+                ${starBtnHtml}
+              </div>
+              ${isCurrent ? '<span class="ws-current-pill">当前</span>' : ''}
+              ${pillHtml}
+            </div>
+          </div>
+          <div class="ws-card-meta">
+            <div class="ws-card-tags">${tagParts.join('')}</div>
+            <span class="num">${escapeHtml(timeLabel)}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderCollapsibleGroup(groupKey, label, items) {
+      if (!items.length) return '';
+      const expanded = wsExpandedGroups.has(groupKey);
+      const header = `
+        <button type="button" class="ws-group-toggle" data-group="${groupKey}" aria-expanded="${expanded}">
+          <span class="ws-group-toggle-left">
+            <span>${expanded ? '▾' : '▸'}</span>
+            <span>${label}</span>
+          </span>
+          <span class="num">${items.length}</span>
+        </button>
+      `;
+      if (!expanded) return header;
+      return header + items.map((item) => renderCardHtml(item, 'done')).join('');
+    }
+
+    function renderDoneBodyHtml() {
+      if (!doneItems.length) {
+        return `<div class="ws-empty">${q ? '无匹配当前筛选条件的会话' : '暂无已完成的会话'}</div>`;
+      }
+      if (q) {
+        return sortBoardCards(doneItems).map((item) => renderCardHtml(item, 'done')).join('');
+      }
+      const chunks = [];
+      if (doneGroups.unread.length) {
+        chunks.push(`<div class="ws-group-label is-unread"><span>待验收</span><span class="num">${doneGroups.unread.length}</span></div>`);
+        chunks.push(doneGroups.unread.map((item) => renderCardHtml(item, 'done')).join(''));
+      }
+      if (doneGroups.today.length) {
+        if (doneGroups.unread.length) {
+          chunks.push(`<div class="ws-group-label"><span>今天</span><span class="num">${doneGroups.today.length}</span></div>`);
+        }
+        chunks.push(doneGroups.today.map((item) => renderCardHtml(item, 'done')).join(''));
+      }
+      chunks.push(renderCollapsibleGroup('week', '近 7 天', doneGroups.week));
+      chunks.push(renderCollapsibleGroup('older', '更早', doneGroups.older));
+      chunks.push(renderCollapsibleGroup('archived', '已归档', doneGroups.archived));
+      const html = chunks.filter(Boolean).join('');
+      return html || '<div class="ws-empty">暂无已完成的会话</div>';
+    }
+
+    const hasWaiting = sortedAttention.some((i) => i.boardStatus === 'waiting');
+    const hasError = sortedAttention.some((i) => i.boardStatus === 'error');
+    const attentionDotClass = hasError && !hasWaiting ? 'ws-dot ws-dot-attention is-error-only' : 'ws-dot ws-dot-attention';
+
+    const laneHtmlMap = {
+      attention: {
+        dotClass: attentionDotClass,
+        count: sortedAttention.length,
+        headAction: '',
+        bodyHtml: sortedAttention.length
+          ? sortedAttention.map((item) => renderCardHtml(item, 'attention')).join('')
+          : `<div class="ws-empty">${q ? '无匹配当前筛选条件的会话' : '暂无待确认或异常的会话'}</div>`,
+      },
+      running: {
+        dotClass: 'ws-dot ws-dot-running',
+        count: sortedRunning.length,
+        headAction: '',
+        bodyHtml: sortedRunning.length
+          ? sortedRunning.map((item) => renderCardHtml(item, 'running')).join('')
+          : `<div class="ws-empty">${q ? '无匹配当前筛选条件的会话' : '当前没有运行中的会话'}</div>`,
+      },
+      done: {
+        dotClass: 'ws-dot ws-dot-done',
+        count: doneItems.length - doneGroups.archived.length,
+        headAction: batchArchivableIds.length > 0 && !q
+          ? '<button type="button" class="ws-col-action" data-action="archive-read">归档已读</button>'
+          : '',
+        bodyHtml: renderDoneBodyHtml(),
+      },
+    };
+
+    boardEl.innerHTML = WS_LANES.map((lane) => {
+      const cfg = laneHtmlMap[lane.key];
+      return `
+        <section class="ws-col" data-col="${lane.key}" aria-label="${lane.label}">
+          <header class="ws-col-head">
+            <span class="ws-col-title">
+              <span class="${cfg.dotClass}" aria-hidden="true"></span>
+              <span>${lane.label}</span>
+            </span>
+            <span class="ws-col-head-right">
+              ${cfg.headAction}
+              <span class="ws-col-count num">${cfg.count}</span>
+            </span>
+          </header>
+          <div class="ws-col-body">${cfg.bodyHtml}</div>
+        </section>
+      `;
+    }).join('');
+
+    boardEl.querySelector('[data-action="archive-read"]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (batchArchivableIds.length > 0) {
+        performBoardAction({ action: 'archive_batch', ids: batchArchivableIds });
+      }
+    });
+
+    boardEl.querySelectorAll('.ws-group-toggle').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const key = btn.dataset.group || '';
+        if (!key) return;
+        if (wsExpandedGroups.has(key)) wsExpandedGroups.delete(key);
+        else wsExpandedGroups.add(key);
+        wsLastRenderKey = '';
+        renderWorkspaceBoard();
+      });
+    });
+
+    boardEl.querySelectorAll('.ws-op-btn').forEach((btn) => {
+      btn.addEventListener('pointerdown', (e) => e.stopPropagation());
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const cid = btn.dataset.cid || '';
+        const op = btn.dataset.op || '';
+        if (!cid || !op) return;
+        if (op === 'star') {
+          performBoardAction({ action: 'star', id: cid, value: btn.dataset.next === '1' });
+        } else if (op === 'archive') {
+          performBoardAction({ action: 'archive', id: cid, value: true });
+        } else if (op === 'unarchive') {
+          performBoardAction({ action: 'archive', id: cid, value: false });
+        } else if (op === 'seen') {
+          performBoardAction({ action: 'seen', id: cid });
+        } else if (op === 'auto') {
+          performBoardAction({ action: 'move', id: cid, column: 'auto' });
+        }
+      });
+    });
+
+    let suppressClickUntil = 0;
+
+    boardEl.querySelectorAll('.ws-card').forEach((card) => {
+      card.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        if (e.target instanceof Element && e.target.closest('.ws-op-btn')) return;
+
+        const cid = card.dataset.cid || '';
+        const sourceCol = card.dataset.col || '';
+        if (!cid) return;
+
+        const rect = card.getBoundingClientRect();
+        const startX = e.clientX;
+        const startY = e.clientY;
+        const offsetX = e.clientX - rect.left;
+        const offsetY = e.clientY - rect.top;
+        let dragging = false;
+        let ghost = null;
+        let activeColEl = null;
+
+        function clearOver() {
+          if (activeColEl) {
+            activeColEl.classList.remove('ws-col-over');
+            activeColEl = null;
+          }
+        }
+
+        function onMove(ev) {
+          const dx = ev.clientX - startX;
+          const dy = ev.clientY - startY;
+          if (!dragging) {
+            if (Math.hypot(dx, dy) < 6) return;
+            dragging = true;
+            wsDraggingCid = cid;
+            card.classList.add('is-dragging');
+            ghost = document.createElement('div');
+            ghost.className = 'ws-drag-ghost';
+            ghost.style.width = `${rect.width}px`;
+            ghost.style.background = getComputedStyle(card).backgroundColor;
+            ghost.style.color = getComputedStyle(card).color;
+            ghost.style.borderColor = getComputedStyle(view).getPropertyValue('--ws-cobalt') || '#3b6ce7';
+            ghost.innerHTML = `<div style="font-weight:500;line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${escapeHtml(card.title || '')}</div>`;
+            document.body.appendChild(ghost);
+          }
+          if (ghost) {
+            ghost.style.left = `${ev.clientX - offsetX}px`;
+            ghost.style.top = `${ev.clientY - offsetY}px`;
+          }
+          const hit = document.elementsFromPoint(ev.clientX, ev.clientY).find((el) => el.classList?.contains('ws-col'));
+          if (hit !== activeColEl) {
+            clearOver();
+            if (hit) {
+              activeColEl = hit;
+              activeColEl.classList.add('ws-col-over');
+            }
+          }
+        }
+
+        function finish(ev, commit) {
+          window.removeEventListener('pointermove', onMove, true);
+          window.removeEventListener('pointerup', onUp, true);
+          window.removeEventListener('pointercancel', onCancel, true);
+          card.classList.remove('is-dragging');
+          if (ghost) {
+            ghost.remove();
+            ghost = null;
+          }
+          const targetCol = commit && activeColEl ? activeColEl.dataset.col || '' : '';
+          clearOver();
+          wsDraggingCid = '';
+          if (dragging) {
+            suppressClickUntil = Date.now() + 260;
+            if (commit && targetCol && targetCol !== sourceCol) {
+              const colToStatus = { attention: 'waiting', running: 'running', done: 'idle' };
+              const nextStatus = colToStatus[targetCol];
+              if (nextStatus) moveBoardCard(cid, nextStatus);
+            }
+          }
+        }
+
+        function onUp(ev) { finish(ev, true); }
+        function onCancel(ev) { finish(ev, false); }
+
+        window.addEventListener('pointermove', onMove, true);
+        window.addEventListener('pointerup', onUp, true);
+        window.addEventListener('pointercancel', onCancel, true);
+      });
+
+      card.addEventListener('click', (e) => {
+        if (Date.now() < suppressClickUntil) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+        if (e.target instanceof Element && e.target.closest('.ws-op-btn')) return;
+        const cid = card.dataset.cid || '';
+        if (cid) navigateToConversation(cid);
+      });
+
+      card.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        if (e.target instanceof Element && e.target.closest('.ws-op-btn')) return;
+        e.preventDefault();
+        const cid = card.dataset.cid || '';
+        if (cid) navigateToConversation(cid);
+      });
+    });
+  }
+
+  function ensureWorkspaceViewMounted() {
+    ensureWsStyle();
+    const mainPane = findWorkspaceMainPane();
+    if (!mainPane) return null;
+    let view = document.getElementById(WS_VIEW_ID);
+    if (!view || !mainPane.contains(view)) {
+      view?.remove();
+      view = document.createElement('div');
+      view.id = WS_VIEW_ID;
+      view.setAttribute('role', 'region');
+      view.setAttribute('aria-label', '工作区看板');
+      mainPane.appendChild(view);
+      wsLastRenderKey = '';
+    }
+    view.classList.toggle('agy-ws-open', wsOpen);
+    if (wsOpen) {
+      renderWorkspaceBoard();
+    }
+    return view;
+  }
+
+  function setWorkspaceOpen(next) {
+    wsOpen = Boolean(next);
+    const menu = document.getElementById(WS_MENU_ID);
+    if (menu) {
+      menu.classList.toggle('agy-ws-menu-active', wsOpen);
+      menu.setAttribute('aria-expanded', String(wsOpen));
+    }
+    if (wsOpen) wsLastRenderKey = '';
+    ensureWorkspaceViewMounted();
+  }
+
+  function mountWorkspaceMenu() {
+    ensureWsStyle();
+    const anchor = findSidebarMenuAnchor();
+    if (!anchor) return null;
+    const existing = document.getElementById(WS_MENU_ID);
+    if (existing && anchor.list.contains(existing)) {
+      existing.classList.toggle('agy-ws-menu-active', wsOpen);
+      existing.setAttribute('aria-expanded', String(wsOpen));
+      updateWorkspaceMenuBadge();
+      return existing;
+    }
+    existing?.remove();
+
+    const menu = document.createElement('button');
+    menu.id = WS_MENU_ID;
+    menu.type = 'button';
+    menu.setAttribute('aria-expanded', String(wsOpen));
+    menu.className = 'agy-button agy-button-custom inline-flex items-center font-medium transition-colors select-none outline-none cursor-pointer disabled:opacity-50 flex-grow w-full justify-start select-none font-normal min-w-0 gap-1.5 px-2 rounded-lg py-1.5 bg-transparent text-secondary-foreground hover:bg-sidebar-muted hover:text-foreground';
+    menu.innerHTML = `
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;" aria-hidden="true">
+        <rect x="3" y="3" width="7" height="7" rx="1"></rect>
+        <rect x="14" y="3" width="7" height="7" rx="1"></rect>
+        <rect x="14" y="14" width="7" height="7" rx="1"></rect>
+        <rect x="3" y="14" width="7" height="7" rx="1"></rect>
+      </svg>
+      <span class="truncate">工作区</span>
+      <span class="ws-menu-badge" aria-hidden="true"></span>
+    `;
+    menu.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setWorkspaceOpen(!wsOpen);
+    });
+
+    anchor.list.insertBefore(menu, anchor.refNode.nextSibling);
+    menu.classList.toggle('agy-ws-menu-active', wsOpen);
+    updateWorkspaceMenuBadge();
+    return menu;
+  }
+
+  function onWorkspaceGlobalClick(e) {
+    if (!wsOpen) return;
+    const target = e.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest('#' + WS_MENU_ID) || target.closest('#' + WS_VIEW_ID)) return;
+    if (target.closest('a, button, [role="button"]')) {
+      setTimeout(() => setWorkspaceOpen(false), 0);
+    }
+  }
+
+  function onWorkspaceKeydown(e) {
+    if (e.key === 'Escape' && wsOpen) {
+      setWorkspaceOpen(false);
+    }
+  }
+
+  document.addEventListener('click', onWorkspaceGlobalClick, true);
+  document.addEventListener('keydown', onWorkspaceKeydown, true);
+
+  window.__agyWsCleanup = () => {
+    document.removeEventListener('click', onWorkspaceGlobalClick, true);
+    document.removeEventListener('keydown', onWorkspaceKeydown, true);
+    document.getElementById(WS_MENU_ID)?.remove();
+    document.getElementById(WS_VIEW_ID)?.remove();
+    document.getElementById(WS_STYLE_ID)?.remove();
+  };
+
+  window.__agyCtxUpdateBoard = (boardData) => {
+    applyPendingActionsToData(boardData);
+    wsBoardData = boardData;
+    updateWorkspaceMenuBadge();
+    if (wsOpen) renderWorkspaceBoard();
+  };
+
+  mountWorkspaceMenu();
+  ensureWorkspaceViewMounted();
+
   function handleRouteChange() {
     const nextCid = getCurrentCid();
     if (nextCid === activeCid) return;
     activeCid = nextCid;
+    if (nextCid) markConversationSeen(nextCid);
+    if (wsOpen) setWorkspaceOpen(false);
     const cached = nextCid ? metricsByCid.get(nextCid) : null;
     const fallback = { empty: true, cascadeId: nextCid };
     if (lastData?.quota) fallback.quota = lastData.quota;
@@ -1413,6 +2965,16 @@
         } else {
           mountBar();
           mountQuotaBar();
+        }
+      }
+      const wsMenu = document.getElementById(WS_MENU_ID);
+      if (!wsMenu || !wsMenu.isConnected) {
+        mountWorkspaceMenu();
+      }
+      if (wsOpen) {
+        const wsView = document.getElementById(WS_VIEW_ID);
+        if (!wsView || !wsView.isConnected) {
+          ensureWorkspaceViewMounted();
         }
       }
     });

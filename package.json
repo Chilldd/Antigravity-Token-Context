@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.mjs",
-    "check": "node --check src/sidecars/token-monitor/main.mjs && node --check src/shared/ls-client.mjs && node --check src/shared/local-store.mjs && node --check src/shared/metrics.mjs && node --check src/shared/pricing.mjs && node --check src/statusline/client.mjs && node --check src/statusline/injector.mjs && node --check src/statusline/inline-bar.js",
+    "check": "node --check src/sidecars/token-monitor/main.mjs && node --check src/sidecars/cdp-injector/main.mjs && node --check src/shared/ls-client.mjs && node --check src/shared/local-store.mjs && node --check src/shared/board-store.mjs && node --check src/shared/metrics.mjs && node --check src/shared/pricing.mjs && node --check src/statusline/client.mjs && node --check src/statusline/injector.mjs && node --check src/statusline/inline-bar.js",
     "install:plugin": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/install.ps1"
   }
 }

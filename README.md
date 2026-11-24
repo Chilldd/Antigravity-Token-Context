@@ -1,6 +1,6 @@
 # Context & Token Monitor (`agy-context-panel`)
 
-为 Antigravity 2.0 提供实时的上下文窗口与 Token 性能监控插件，支持**右侧辅助面板**与**对话框底部紧凑状态栏（CDP）**两种展示方式，刷新不额外消耗 Token。
+为 Antigravity 2.0 提供实时的上下文窗口与 Token 性能监控插件，支持**右侧辅助面板**、**对话框底部紧凑状态栏（CDP）**与**工作区任务看板（CDP）**，刷新不额外消耗 Token。
 
 ## 功能特性
 
@@ -22,10 +22,15 @@
   - **上下文胶囊**：在输入框底部工具栏嵌入环形进度小圆圈（上下文占用百分比）、最新生成速度（`tok/s`）与交互总 Token 量；高占用时显示 `/compact` 快捷填入按钮，悬停或点击固定详情浮层，查看完整上下文、速度、TTFT、缓存命中率及输入输出拆分。
   - **Gemini 额度胶囊（独立容器）**：紧邻上下文胶囊右侧独立展示 **Gemini Models** 额度池的 5 小时（`5h`）与 7 天（`7d`）剩余额度百分比（低余额时自动琥珀/红色提示），悬停或点击固定独立的额度 Tips 浮层，查看对应窗口进度条与重置倒计时。
   - 同一窗口切换会话或新建对话时自动保持挂载；未开启 CDP 端口时静默待命，不影响右侧面板使用。
+- **工作区任务看板（需开启 CDP）**
+  - 在左侧栏注入「工作区」快捷入口并显示待处理与新完成数量角标，点击在主视图展开全宽任务看板。
+  - **三栏主次视图**：按「需处理（待确认 / 异常）」「进行中」「已完成」三栏展示，卡片以左侧状态色条与状态微胶囊区分状态，支持拖拽切换状态与一键恢复自动分类。
+  - **待验收、关注置顶与分层归档**：支持星标置顶、点击会话自动标为已读、单条归档与「归档已读」批量清理；已完成会话按「待验收（新完成）→ 今天（默认展开）→ 近 7 天 / 更早 / 已归档（默认折叠，点击展开）」组织，归档后有新动态自动浮出；状态持久化保存在 `~/.gemini/antigravity/agy-workspace-board.json`。
+  - **工作区范围与检索**：支持「当前项目 / 全部」范围切换，搜索时自动跨时间折叠与已归档记录检索。
 
-## 启用底部状态栏（CDP）
+## 启用底部状态栏与工作区看板（CDP）
 
-在启动 Antigravity 时附加远程调试端口参数（仅监听本机回环地址），例如：
+在启动 Antigravity 时附加远程调试端口参数（仅监听本机回环地址），CDP 注入器由独立常驻 sidecar（`cdp-injector`）运行，无需打开右侧面板即可生效，例如：
 
 ```bat
 Antigravity.exe --remote-debugging-port=9223 --remote-debugging-address=127.0.0.1 --remote-allow-origins=*
@@ -80,12 +85,15 @@ agy-context-panel/
 ├── scripts/install.ps1             # 同步插件到 ~/.gemini/config/plugins/
 ├── src/
 │   ├── shared/                     # 通用模块（右侧面板与底部状态栏共用）
+│   │   ├── board-store.mjs         # 工作区看板星标、已读、归档与手动分类持久化
 │   │   ├── ls-client.mjs           # LanguageServerService RPC 与模型目录缓存
 │   │   ├── local-store.mjs         # 本地 SQLite 全局索引与全量跨工作区统计
 │   │   ├── metrics.mjs             # 上下文、Token、缓存命中率、速度与费用计算
 │   │   └── pricing.mjs             # 模型参考单价、汇率及本地持久化配置
-│   ├── sidecars/token-monitor/     # 右侧辅助面板（Sidecar 服务、页面与本地 ECharts）
-│   └── statusline/                 # 底部状态栏（CDP 客户端与浏览器注入脚本）
+│   ├── sidecars/
+│   │   ├── cdp-injector/           # 独立常驻 CDP 注入器 sidecar
+│   │   └── token-monitor/          # 右侧辅助面板（Sidecar 服务、页面与本地 ECharts）
+│   └── statusline/                 # 底部状态栏与工作区看板（CDP 客户端与浏览器注入脚本）
 └── tests/                          # 单元测试
 ```
 

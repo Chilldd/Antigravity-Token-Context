@@ -1,0 +1,7 @@
+{
+  "command": "node",
+  "args": ["main.mjs"],
+  "restart_policy": "always",
+  "display_name": "Antigravity CDP Injector",
+  "description": "后台常驻执行 CDP 注入（底部状态与额度双胶囊、左侧工作区入口及看板）并同步任务状态。"
+}

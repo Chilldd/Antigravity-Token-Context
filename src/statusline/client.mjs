@@ -6,7 +6,13 @@ export class CdpSession {
     this.ws = null;
     this.nextId = 1;
     this.pending = new Map();
+    this.eventListeners = new Set();
     this.connected = false;
+  }
+
+  onEvent(listener) {
+    if (typeof listener === 'function') this.eventListeners.add(listener);
+    return () => this.eventListeners.delete(listener);
   }
 
   connect() {
@@ -32,6 +38,10 @@ export class CdpSession {
             this.pending.delete(msg.id);
             if (msg.error) rej(new Error(msg.error.message || 'CDP error'));
             else res(msg.result);
+          } else if (msg.method) {
+            for (const fn of this.eventListeners) {
+              try { fn(msg); } catch { /* ignore listener errors */ }
+            }
           }
         } catch {
           // ignore malformed messages
@@ -54,7 +64,7 @@ export class CdpSession {
     });
   }
 
-  evalJs(expression) {
+  call(method, params = {}) {
     if (!this.connected || !this.ws) {
       return Promise.reject(new Error('CDP not connected'));
     }
@@ -62,7 +72,7 @@ export class CdpSession {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error('CDP eval timeout'));
+        reject(new Error('CDP call timeout'));
       }, 4000);
       this.pending.set(id, {
         resolve: (res) => {
@@ -74,12 +84,12 @@ export class CdpSession {
           reject(err);
         },
       });
-      this.ws.send(JSON.stringify({
-        id,
-        method: 'Runtime.evaluate',
-        params: { expression, returnByValue: true },
-      }));
+      this.ws.send(JSON.stringify({ id, method, params }));
     });
+  }
+
+  evalJs(expression) {
+    return this.call('Runtime.evaluate', { expression, returnByValue: true });
   }
 
   close() {

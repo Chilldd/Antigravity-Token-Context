@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import http from 'node:http';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { extractGeminiQuota, extractSubagentsFromTrajectory, findSubagentEntries, getLatestMetrics } from '../src/shared/ls-client.mjs';
+import { applyBoardAction, ensureBoardInitialized, getBoardStateMap, setBoardCardColumn } from '../src/shared/board-store.mjs';
+import { extractGeminiQuota, extractSubagentsFromTrajectory, findSubagentEntries, getGeminiQuotaSummary, getLatestMetrics, normalizeBoardStatus, parseCsrfTokenFromCommandLine } from '../src/shared/ls-client.mjs';
 import { findLocalSubagentIds, getLocalGlobalSummary } from '../src/shared/local-store.mjs';
 
 test('findSubagentEntries discovers child and root-linked subagents', () => {
@@ -275,4 +277,147 @@ test('findLocalSubagentIds discovers direct and nested descendants from sqlite',
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('getGeminiQuotaSummary sends forceRefresh: true and refreshes every 5s', async (t) => {
+  const requests = [];
+  let pctFraction = 0.8;
+  const server = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', (chunk) => { raw += chunk; });
+    req.on('end', () => {
+      requests.push({ url: req.url, body: JSON.parse(raw || '{}') });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        response: {
+          groups: [
+            {
+              displayName: 'Gemini Models',
+              buckets: [
+                { bucketId: 'gemini-5h', window: '5h', remainingFraction: pctFraction, resetTime: '2026-11-23T15:00:00Z' },
+              ],
+            },
+          ],
+        },
+      }));
+    });
+  });
+
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  const prevAddr = process.env.ANTIGRAVITY_LS_ADDRESS;
+  const prevCsrf = process.env.ANTIGRAVITY_CSRF_TOKEN;
+  process.env.ANTIGRAVITY_LS_ADDRESS = `127.0.0.1:${port}`;
+  process.env.ANTIGRAVITY_CSRF_TOKEN = 'test-csrf';
+
+  let now = 1_700_000_000_000;
+  t.mock.method(Date, 'now', () => now);
+
+  try {
+    const first = await getGeminiQuotaSummary();
+    assert.equal(first.fiveHour.pct, 80);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url, '/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary');
+    assert.deepEqual(requests[0].body, { forceRefresh: true });
+
+    pctFraction = 0.7;
+    now += 4900;
+    const cached = await getGeminiQuotaSummary();
+    assert.equal(cached.fiveHour.pct, 80);
+    assert.equal(requests.length, 1);
+
+    now += 200;
+    const refreshed = await getGeminiQuotaSummary();
+    assert.equal(refreshed.fiveHour.pct, 70);
+    assert.equal(requests.length, 2);
+    assert.deepEqual(requests[1].body, { forceRefresh: true });
+  } finally {
+    if (prevAddr === undefined) delete process.env.ANTIGRAVITY_LS_ADDRESS;
+    else process.env.ANTIGRAVITY_LS_ADDRESS = prevAddr;
+    if (prevCsrf === undefined) delete process.env.ANTIGRAVITY_CSRF_TOKEN;
+    else process.env.ANTIGRAVITY_CSRF_TOKEN = prevCsrf;
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('normalizeBoardStatus maps LS status, killed flag, and manual override into kanban columns', () => {
+  assert.equal(normalizeBoardStatus('CASCADE_RUN_STATUS_WAITING_FOR_USER'), 'waiting');
+  assert.equal(normalizeBoardStatus('CASCADE_RUN_STATUS_RUNNING'), 'running');
+  assert.equal(normalizeBoardStatus('CASCADE_RUN_STATUS_IDLE', '', { notFullyIdle: true }), 'running');
+  assert.equal(normalizeBoardStatus('CASCADE_RUN_STATUS_IDLE', '', { killed: true }), 'error');
+  assert.equal(normalizeBoardStatus('CASCADE_RUN_STATUS_IDLE', '', { manualColumn: 'starred' }), 'starred');
+  assert.equal(normalizeBoardStatus('CASCADE_RUN_STATUS_IDLE', '', { manualColumn: 'waiting' }), 'waiting');
+  assert.equal(normalizeBoardStatus('CASCADE_RUN_STATUS_RUNNING', '', { manualColumn: 'idle' }), 'running');
+  assert.equal(normalizeBoardStatus('CASCADE_RUN_STATUS_IDLE'), 'idle');
+  assert.equal(normalizeBoardStatus('CASCADE_RUN_STATUS_CANCELLED'), 'error');
+  assert.equal(normalizeBoardStatus('', 'TERMINATION_REASON_ERROR'), 'error');
+});
+
+test('setBoardCardColumn persists and clears manual card states', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agy-board-store-'));
+  const cfgPath = join(dir, 'board.json');
+  try {
+    setBoardCardColumn('conv-1', 'waiting', cfgPath);
+    assert.equal(getBoardStateMap(cfgPath)['conv-1'].column, 'waiting');
+    setBoardCardColumn('conv-1', 'auto', cfgPath);
+    assert.equal(getBoardStateMap(cfgPath)['conv-1'], undefined);
+
+    setBoardCardColumn('conv-2', 'starred', cfgPath);
+    assert.equal(getBoardStateMap(cfgPath)['conv-2'].starred, true);
+    assert.equal(getBoardStateMap(cfgPath)['conv-2'].column, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('applyBoardAction handles star, archive, batch archive, seenAt, and v1 migration', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agy-board-v2-'));
+  const cfgPath = join(dir, 'board.json');
+  try {
+    writeFileSync(cfgPath, JSON.stringify({
+      version: 1,
+      cards: {
+        'legacy-1': { column: 'starred', updatedAt: '2026-11-20T00:00:00.000Z' },
+      },
+    }), 'utf8');
+
+    const init1 = ensureBoardInitialized(cfgPath);
+    assert.ok(init1.initializedAt);
+    assert.equal(init1.cards['legacy-1'].starred, true);
+    assert.equal(init1.cards['legacy-1'].column, undefined);
+
+    const init2 = ensureBoardInitialized(cfgPath);
+    assert.equal(init2.initializedAt, init1.initializedAt);
+
+    applyBoardAction({ action: 'star', id: 'c1', value: true }, cfgPath);
+    assert.equal(getBoardStateMap(cfgPath)['c1'].starred, true);
+
+    applyBoardAction({ action: 'star', id: 'c1', value: false }, cfgPath);
+    assert.equal(getBoardStateMap(cfgPath)['c1'], undefined);
+
+    applyBoardAction({ action: 'seen', id: 'c2', at: '2026-11-24T08:00:00.000Z' }, cfgPath);
+    applyBoardAction({ action: 'seen', id: 'c2', at: '2026-11-24T07:00:00.000Z' }, cfgPath);
+    assert.equal(getBoardStateMap(cfgPath)['c2'].seenAt, '2026-11-24T08:00:00.000Z');
+
+    applyBoardAction({ action: 'archive', id: 'c2', value: true }, cfgPath);
+    assert.equal(getBoardStateMap(cfgPath)['c2'].archived, true);
+    assert.ok(getBoardStateMap(cfgPath)['c2'].archivedAt);
+
+    applyBoardAction({ action: 'archive', id: 'c2', value: false }, cfgPath);
+    assert.equal(getBoardStateMap(cfgPath)['c2'].archived, undefined);
+    assert.equal(getBoardStateMap(cfgPath)['c2'].archivedAt, undefined);
+
+    applyBoardAction({ action: 'archive_batch', ids: ['c3', 'c4'] }, cfgPath);
+    const afterBatch = getBoardStateMap(cfgPath);
+    assert.equal(afterBatch['c3'].archived, true);
+    assert.equal(afterBatch['c4'].archived, true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('parseCsrfTokenFromCommandLine extracts csrf token from = or space separated args', () => {
+  assert.equal(parseCsrfTokenFromCommandLine('ls.exe --csrf_token=abc-123 --port 42'), 'abc-123');
+  assert.equal(parseCsrfTokenFromCommandLine('ls.exe --csrf_token "tok-456" --standalone'), 'tok-456');
+  assert.equal(parseCsrfTokenFromCommandLine('ls.exe --standalone'), '');
 });

@@ -300,10 +300,18 @@ function readSummaryIndex(appDataDir = resolveAppDataDir()) {
   const parentMap = new Map();
   try {
     summaryDb = new DatabaseSync(summaryDbPath, { readOnly: true });
-    rows = summaryDb.prepare(`
-      SELECT conversation_id, title, last_modified_time, parent_conversation_id
-      FROM conversation_summaries
-    `).all();
+    try {
+      rows = summaryDb.prepare(`
+        SELECT conversation_id, title, last_modified_time, parent_conversation_id,
+               step_count, workspace_uris, status, not_fully_idle, killed
+        FROM conversation_summaries
+      `).all();
+    } catch {
+      rows = summaryDb.prepare(`
+        SELECT conversation_id, title, last_modified_time, parent_conversation_id
+        FROM conversation_summaries
+      `).all();
+    }
 
     try {
       const parentRows = summaryDb.prepare('SELECT conversation_id, parent_id FROM conversation_parents').all();
@@ -436,4 +444,84 @@ export function getLocalGlobalSummary(range = 'today', cutoffMs = 0, catalog = {
     ...stats,
     updatedAt: new Date().toISOString(),
   };
+}
+
+function parseWorkspaceUrisField(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.filter(Boolean).map(String);
+  const str = String(raw).trim();
+  if (!str) return [];
+  try {
+    const parsed = JSON.parse(str);
+    return Array.isArray(parsed) ? parsed.filter(Boolean).map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function normalizeWorkspaceUriKey(uri) {
+  if (!uri) return '';
+  try {
+    return decodeURIComponent(String(uri).trim()).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  } catch {
+    return String(uri).trim().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  }
+}
+
+function extractWorkspaceNameFromUris(uris) {
+  const first = Array.isArray(uris) && uris[0] ? String(uris[0]) : '';
+  if (!first) return '';
+  try {
+    const decoded = decodeURIComponent(first).replace(/\/+$/, '');
+    return decoded.split('/').pop() || '';
+  } catch {
+    return first.replace(/\/+$/, '').split('/').pop() || '';
+  }
+}
+
+/**
+ * List recent root conversations from local SQLite summary index without opening per-conversation DBs.
+ */
+export function listLocalRecentConversations(limit = 40, appDataDir = resolveAppDataDir()) {
+  const index = readSummaryIndex(appDataDir);
+  if (!index) return [];
+  const { rows, parentMap } = index;
+
+  const subagentCountByRoot = new Map();
+  for (const r of rows) {
+    const id = r.conversation_id;
+    if (!id || !parentMap.has(id)) continue;
+    const rootId = resolveRootConversationId(id, parentMap);
+    if (rootId && rootId !== id) {
+      subagentCountByRoot.set(rootId, (subagentCountByRoot.get(rootId) || 0) + 1);
+    }
+  }
+
+  const roots = [];
+  for (const r of rows) {
+    const id = r.conversation_id;
+    if (!id || parentMap.has(id)) continue;
+    const ts = parseSqliteTimestampMs(r.last_modified_time);
+    const uris = parseWorkspaceUrisField(r.workspace_uris);
+    const workspaceKeys = uris.map(normalizeWorkspaceUriKey).filter(Boolean);
+    roots.push({
+      id,
+      summary: r.title || id.slice(0, 8),
+      stepCount: Number(r.step_count) || 0,
+      lastModifiedTime: ts > 0 ? new Date(ts).toISOString() : '',
+      ts,
+      status: r.status || 'CASCADE_RUN_STATUS_IDLE',
+      killed: Boolean(r.killed),
+      notFullyIdle: Boolean(r.not_fully_idle),
+      subagentCount: subagentCountByRoot.get(id) || 0,
+      workspaceName: extractWorkspaceNameFromUris(uris),
+      workspaceKeys,
+      branchName: '',
+      isCurrentWorkspace: false,
+      source: 'local',
+    });
+  }
+
+  roots.sort((a, b) => b.ts - a.ts);
+  return roots.slice(0, Math.max(1, limit)).map(({ ts, ...rest }) => rest);
 }

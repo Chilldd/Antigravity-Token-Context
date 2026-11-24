@@ -3,10 +3,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Response, SidecarApp } from 'sidecar_sdk';
-import { startCdpInjector } from '../../statusline/injector.mjs';
 import {
   ensureCatalog,
-  getGeminiQuotaSummary,
   getGlobalSummary,
   getLatestMetrics,
   listRecentConversations,
@@ -115,13 +113,8 @@ app.api('/api/pricing/reset', async () => {
 
 app.run();
 ensureCatalog();
-const stopInjector = startCdpInjector({
-  getMetrics: (cid) => getLatestMetrics(cid, { includeSubagents: false, fallbackToLatest: false }),
-  getQuota: getGeminiQuotaSummary,
-});
 
 function shutdown() {
-  try { stopInjector(); } catch {}
   releasePidFile();
   process.exit(0);
 }
